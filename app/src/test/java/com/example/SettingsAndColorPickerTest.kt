@@ -197,5 +197,18 @@ class SettingsAndColorPickerTest {
         assertEquals(ApiProvider.LOCATION_IQ, rejected.provider)
         assertEquals(401, rejected.httpCode)
         assertTrue(rejected.message!!.contains("HTTP 401"))
+
+        assertEquals(
+            "abc123def456",
+            LocationSearchService.sanitizeApiKey("  \"abc123\ndef456\"  ")
+        )
+        assertEquals(
+            "Invalid apiKey",
+            LocationSearchService.parseErrorDetailFromBody("""{"statusCode":401,"error":"Unauthorized","message":"Invalid apiKey"}""")
+        )
+        assertEquals(
+            "Invalid key",
+            LocationSearchService.parseErrorDetailFromBody("""{"error":"Invalid key"}""")
+        )
     }
 }

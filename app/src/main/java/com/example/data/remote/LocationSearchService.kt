@@ -60,7 +60,7 @@ class LocationSearchService(
             return@withContext Result.success(RemoteSearchOutcome(emptyList(), "OpenStreetMap"))
         }
 
-        val cleanKey = apiKey.trim()
+        val cleanKey = sanitizeApiKey(apiKey)
         if (cleanKey.isNotEmpty() && apiProvider == ApiProvider.GEOAPIFY) {
             val geoapifyResult = runCatching {
                 queryGeoapify(trimmed, cleanKey, biasLat, biasLon)
@@ -116,7 +116,7 @@ class LocationSearchService(
         apiKey: String,
         provider: ApiProvider
     ): Result<String> = withContext(Dispatchers.IO) {
-        val cleanKey = apiKey.trim()
+        val cleanKey = sanitizeApiKey(apiKey)
         if (cleanKey.isEmpty()) {
             return@withContext Result.failure(IllegalArgumentException("Enter an API key first."))
         }
@@ -200,10 +200,12 @@ class LocationSearchService(
         return try {
             val code = conn.responseCode
             if (code == 401 || code == 403) {
+                val detail = extractErrorDetail(conn)
+                val suffix = if (detail != null) ": $detail" else ""
                 throw ApiKeyRejectedException(
                     ApiProvider.LOCATION_IQ,
                     code,
-                    "LocationIQ rejected this token (HTTP $code). Check your API key in Settings."
+                    "LocationIQ rejected this token (HTTP $code$suffix). Confirm it is a valid LocationIQ token with no referrer restrictions."
                 )
             }
             if (code == 404) {
@@ -211,7 +213,9 @@ class LocationSearchService(
                 return emptyList()
             }
             if (code !in 200..299) {
-                throw IllegalStateException("LocationIQ returned HTTP $code")
+                val detail = extractErrorDetail(conn)
+                val suffix = if (detail != null) ": $detail" else ""
+                throw IllegalStateException("LocationIQ returned HTTP $code$suffix")
             }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             parseNominatimJson(body)
@@ -244,20 +248,32 @@ class LocationSearchService(
         return try {
             val code = conn.responseCode
             if (code == 401 || code == 403) {
+                val detail = extractErrorDetail(conn)
+                val suffix = if (detail != null) ": $detail" else ""
                 throw ApiKeyRejectedException(
                     ApiProvider.GEOAPIFY,
                     code,
-                    "Geoapify rejected this API key (HTTP $code). Check your key in Settings."
+                    "Geoapify rejected this API key (HTTP $code$suffix). Confirm it is an active Geoapify key with no HTTP referrer restriction."
                 )
             }
             if (code !in 200..299) {
-                throw IllegalStateException("Geoapify returned HTTP $code")
+                val detail = extractErrorDetail(conn)
+                val suffix = if (detail != null) ": $detail" else ""
+                throw IllegalStateException("Geoapify returned HTTP $code$suffix")
             }
             val body = conn.inputStream.bufferedReader().use { it.readText() }
             parseGeoapifyJson(body)
         } finally {
             conn.disconnect()
         }
+    }
+
+    private fun extractErrorDetail(conn: HttpURLConnection): String? {
+        val raw = runCatching {
+            conn.errorStream?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        return parseErrorDetailFromBody(raw)
     }
 
     @Suppress("DEPRECATION")
@@ -298,6 +314,29 @@ class LocationSearchService(
         private val COORD_REGEX = Regex(
             """^\s*([-+]?\d{1,2}(?:\.\d+)?)\s*[,;\s]\s*([-+]?\d{1,3}(?:\.\d+)?)\s*$"""
         )
+
+        fun sanitizeApiKey(rawKey: String): String {
+            return rawKey
+                .trim()
+                .removeSurrounding("\"")
+                .removeSurrounding("'")
+                .replace(Regex("""\s+"""), "")
+        }
+
+        fun parseErrorDetailFromBody(rawBody: String): String? {
+            val trimmed = rawBody.trim()
+            if (trimmed.isEmpty()) return null
+            if (trimmed.startsWith("{")) {
+                val obj = runCatching { JSONObject(trimmed) }.getOrNull()
+                if (obj != null) {
+                    val msg = obj.optString("message", "").trim()
+                    if (msg.isNotEmpty()) return msg
+                    val err = obj.optString("error", "").trim()
+                    if (err.isNotEmpty()) return err
+                }
+            }
+            return trimmed.take(120)
+        }
 
         fun parseCoordinateQuery(rawQuery: String): SearchPlaceResult? {
             val match = COORD_REGEX.matchEntire(rawQuery) ?: return null

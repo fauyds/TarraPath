@@ -497,7 +497,7 @@ class TerraViewModel(
     fun saveApiKeyConfig(key: String, provider: ApiProvider) {
         viewModelScope.launch {
             preferences.setApiProvider(provider)
-            preferences.setApiKey(key)
+            preferences.setApiKey(LocationSearchService.sanitizeApiKey(key))
             _apiKeyTestState.value = ApiKeyTestState.Idle
         }
     }
