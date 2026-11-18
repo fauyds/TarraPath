@@ -358,8 +358,16 @@ data class LocationSearchState(
     val isSearching: Boolean = false,
     val results: List<SearchPlaceResult> = emptyList(),
     val errorMessage: String? = null,
-    val hasSearched: Boolean = false
+    val hasSearched: Boolean = false,
+    val activeProviderLabel: String? = null
 )
+
+sealed interface ApiKeyTestState {
+    data object Idle : ApiKeyTestState
+    data object Testing : ApiKeyTestState
+    data class Verified(val message: String) : ApiKeyTestState
+    data class Failed(val message: String) : ApiKeyTestState
+}
 
 enum class MarkerStyle(
     val label: String,

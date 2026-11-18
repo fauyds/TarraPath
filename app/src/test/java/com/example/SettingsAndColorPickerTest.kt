@@ -160,4 +160,42 @@ class SettingsAndColorPickerTest {
         assertTrue(iconOnly !== iconOutline)
         assertTrue(iconOnly !== iconAltTint)
     }
+
+    @Test
+    fun verifyApiKey_handlesBlankAndGeneralProviderCleanly() = runTest {
+        val service = LocationSearchService()
+
+        val blankResult = service.verifyApiKey("   ", ApiProvider.GEOAPIFY)
+        assertTrue(blankResult.isFailure)
+        assertEquals("Enter an API key first.", blankResult.exceptionOrNull()?.message)
+
+        val generalResult = service.verifyApiKey("my-personal-key", ApiProvider.CUSTOM_GENERAL)
+        assertTrue(generalResult.isSuccess)
+        assertTrue(generalResult.getOrThrow().contains("saved locally", ignoreCase = true))
+    }
+
+    @Test
+    fun searchRemotePlacesWithProvider_shortQueryAndRejectedException() = runTest {
+        val service = LocationSearchService()
+        val shortOutcome = service.searchRemotePlacesWithProvider(
+            query = "a",
+            apiKey = "fake",
+            apiProvider = ApiProvider.GEOAPIFY
+        )
+        assertTrue(shortOutcome.isSuccess)
+        assertEquals("OpenStreetMap", shortOutcome.getOrThrow().providerLabel)
+        assertTrue(shortOutcome.getOrThrow().results.isEmpty())
+
+        // LocationIQ returns {"error":"Unable to geocode"} on empty 404 or bad object payloads
+        assertTrue(LocationSearchService.parseNominatimJson("""{"error":"Unable to geocode"}""").isEmpty())
+
+        val rejected = com.example.data.remote.ApiKeyRejectedException(
+            provider = ApiProvider.LOCATION_IQ,
+            httpCode = 401,
+            message = "LocationIQ rejected this token (HTTP 401)."
+        )
+        assertEquals(ApiProvider.LOCATION_IQ, rejected.provider)
+        assertEquals(401, rejected.httpCode)
+        assertTrue(rejected.message!!.contains("HTTP 401"))
+    }
 }

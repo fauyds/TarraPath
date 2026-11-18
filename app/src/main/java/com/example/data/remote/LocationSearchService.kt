@@ -17,6 +17,17 @@ import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
 
+class ApiKeyRejectedException(
+    val provider: ApiProvider,
+    val httpCode: Int,
+    message: String
+) : IllegalStateException(message)
+
+data class RemoteSearchOutcome(
+    val results: List<SearchPlaceResult>,
+    val providerLabel: String
+)
+
 class LocationSearchService(
     private val context: Context? = null
 ) {
@@ -27,9 +38,27 @@ class LocationSearchService(
         biasLon: Double? = null,
         apiKey: String = "",
         apiProvider: ApiProvider = ApiProvider.CUSTOM_GENERAL
-    ): Result<List<SearchPlaceResult>> = withContext(Dispatchers.IO) {
+    ): Result<List<SearchPlaceResult>> {
+        return searchRemotePlacesWithProvider(
+            query = query,
+            biasLat = biasLat,
+            biasLon = biasLon,
+            apiKey = apiKey,
+            apiProvider = apiProvider
+        ).map { it.results }
+    }
+
+    suspend fun searchRemotePlacesWithProvider(
+        query: String,
+        biasLat: Double? = null,
+        biasLon: Double? = null,
+        apiKey: String = "",
+        apiProvider: ApiProvider = ApiProvider.CUSTOM_GENERAL
+    ): Result<RemoteSearchOutcome> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
-        if (trimmed.length < 2) return@withContext Result.success(emptyList())
+        if (trimmed.length < 2) {
+            return@withContext Result.success(RemoteSearchOutcome(emptyList(), "OpenStreetMap"))
+        }
 
         val cleanKey = apiKey.trim()
         if (cleanKey.isNotEmpty() && apiProvider == ApiProvider.GEOAPIFY) {
@@ -37,14 +66,26 @@ class LocationSearchService(
                 queryGeoapify(trimmed, cleanKey, biasLat, biasLon)
             }
             if (geoapifyResult.isSuccess) {
-                return@withContext geoapifyResult
+                return@withContext Result.success(
+                    RemoteSearchOutcome(geoapifyResult.getOrThrow(), "Geoapify (API Key)")
+                )
+            }
+            val err = geoapifyResult.exceptionOrNull()
+            if (err is ApiKeyRejectedException) {
+                return@withContext Result.failure(err)
             }
         } else if (cleanKey.isNotEmpty() && apiProvider == ApiProvider.LOCATION_IQ) {
             val locationIqResult = runCatching {
                 queryLocationIq(trimmed, cleanKey, biasLat, biasLon)
             }
             if (locationIqResult.isSuccess) {
-                return@withContext locationIqResult
+                return@withContext Result.success(
+                    RemoteSearchOutcome(locationIqResult.getOrThrow(), "LocationIQ (API Key)")
+                )
+            }
+            val err = locationIqResult.exceptionOrNull()
+            if (err is ApiKeyRejectedException) {
+                return@withContext Result.failure(err)
             }
         }
 
@@ -52,7 +93,9 @@ class LocationSearchService(
             queryNominatim(trimmed, biasLat, biasLon)
         }
         if (nominatimResult.isSuccess) {
-            return@withContext nominatimResult
+            return@withContext Result.success(
+                RemoteSearchOutcome(nominatimResult.getOrThrow(), "OpenStreetMap")
+            )
         }
 
         // Fallback to platform Geocoder if available on device
@@ -60,11 +103,36 @@ class LocationSearchService(
             queryAndroidGeocoder(trimmed)
         }.getOrNull()
         if (!fallback.isNullOrEmpty()) {
-            return@withContext Result.success(fallback)
+            return@withContext Result.success(
+                RemoteSearchOutcome(fallback, "Device Geocoder")
+            )
         }
 
         val err = nominatimResult.exceptionOrNull()
         Result.failure(err ?: IllegalStateException("Location search unavailable"))
+    }
+
+    suspend fun verifyApiKey(
+        apiKey: String,
+        provider: ApiProvider
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val cleanKey = apiKey.trim()
+        if (cleanKey.isEmpty()) {
+            return@withContext Result.failure(IllegalArgumentException("Enter an API key first."))
+        }
+        when (provider) {
+            ApiProvider.CUSTOM_GENERAL -> {
+                Result.success("Key saved locally. Select Geoapify or LocationIQ to authenticate search requests.")
+            }
+            ApiProvider.GEOAPIFY -> runCatching {
+                queryGeoapify("London", cleanKey, null, null)
+                "Verified! Geoapify API key is active."
+            }
+            ApiProvider.LOCATION_IQ -> runCatching {
+                queryLocationIq("London", cleanKey, null, null)
+                "Verified! LocationIQ token is active."
+            }
+        }
     }
 
     private fun queryNominatim(
@@ -131,6 +199,17 @@ class LocationSearchService(
         }
         return try {
             val code = conn.responseCode
+            if (code == 401 || code == 403) {
+                throw ApiKeyRejectedException(
+                    ApiProvider.LOCATION_IQ,
+                    code,
+                    "LocationIQ rejected this token (HTTP $code). Check your API key in Settings."
+                )
+            }
+            if (code == 404) {
+                // LocationIQ returns 404 {"error":"Unable to geocode"} when no places match
+                return emptyList()
+            }
             if (code !in 200..299) {
                 throw IllegalStateException("LocationIQ returned HTTP $code")
             }
@@ -164,6 +243,13 @@ class LocationSearchService(
         }
         return try {
             val code = conn.responseCode
+            if (code == 401 || code == 403) {
+                throw ApiKeyRejectedException(
+                    ApiProvider.GEOAPIFY,
+                    code,
+                    "Geoapify rejected this API key (HTTP $code). Check your key in Settings."
+                )
+            }
             if (code !in 200..299) {
                 throw IllegalStateException("Geoapify returned HTTP $code")
             }

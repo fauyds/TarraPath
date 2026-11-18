@@ -27,7 +27,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Gradient
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Key
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +69,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.data.model.ApiKeyTestState
 import com.example.data.model.ApiProvider
 import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MapPalette
@@ -94,10 +98,13 @@ fun SettingsScreen(
     customAccentColorArgb: Long?,
     apiKey: String,
     apiProvider: ApiProvider,
+    apiKeyTestState: ApiKeyTestState,
     mapSettings: MapDisplaySettings,
     onSelectThemeMode: (ThemeMode) -> Unit,
     onSetCustomAccentColor: (Long?) -> Unit,
     onSaveApiKeyConfig: (key: String, provider: ApiProvider) -> Unit,
+    onTestApiKey: (key: String, provider: ApiProvider) -> Unit,
+    onResetApiKeyTest: () -> Unit,
     onClearApiKey: () -> Unit,
     onToggleEasyMode: (Boolean) -> Unit,
     onToggleGridLines: (Boolean) -> Unit,
@@ -532,7 +539,10 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ExpressiveCard(
-                        onClick = { showApiKeyDialog = true },
+                        onClick = {
+                            onResetApiKeyTest()
+                            showApiKeyDialog = true
+                        },
                         modifier = Modifier.testTag("settings_api_key_card")
                     ) {
                         Row(
@@ -620,6 +630,9 @@ fun SettingsScreen(
         ApiKeySettingsDialog(
             initialApiKey = apiKey,
             initialProvider = apiProvider,
+            testState = apiKeyTestState,
+            onTestKey = onTestApiKey,
+            onResetTest = onResetApiKeyTest,
             onSave = { newKey, newProvider ->
                 onSaveApiKeyConfig(newKey, newProvider)
                 showApiKeyDialog = false
@@ -628,7 +641,10 @@ fun SettingsScreen(
                 onClearApiKey()
                 showApiKeyDialog = false
             },
-            onDismiss = { showApiKeyDialog = false }
+            onDismiss = {
+                onResetApiKeyTest()
+                showApiKeyDialog = false
+            }
         )
     }
 }
@@ -637,6 +653,9 @@ fun SettingsScreen(
 private fun ApiKeySettingsDialog(
     initialApiKey: String,
     initialProvider: ApiProvider,
+    testState: ApiKeyTestState,
+    onTestKey: (key: String, provider: ApiProvider) -> Unit,
+    onResetTest: () -> Unit,
     onSave: (key: String, provider: ApiProvider) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit
@@ -680,9 +699,12 @@ private fun ApiKeySettingsDialog(
                         Surface(
                             modifier = Modifier
                                 .weight(1f)
-                                .defaultMinSize(minHeight = 42.dp)
+                                .defaultMinSize(minHeight = 48.dp)
                                 .clip(RoundedCornerShape(percent = 50))
-                                .clickable { selectedProvider = provider }
+                                .clickable {
+                                    selectedProvider = provider
+                                    if (testState !is ApiKeyTestState.Idle) onResetTest()
+                                }
                                 .testTag("api_provider_${provider.name}"),
                             shape = RoundedCornerShape(percent = 50),
                             color = if (selected) {
@@ -718,7 +740,10 @@ private fun ApiKeySettingsDialog(
 
                 OutlinedTextField(
                     value = draftKey,
-                    onValueChange = { draftKey = it },
+                    onValueChange = {
+                        draftKey = it
+                        if (testState !is ApiKeyTestState.Idle) onResetTest()
+                    },
                     label = { Text("API Key") },
                     placeholder = { Text(selectedProvider.keyPlaceholder) },
                     singleLine = true,
@@ -743,8 +768,86 @@ private fun ApiKeySettingsDialog(
                         .testTag("api_key_input")
                 )
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    ExpressivePillButton(
+                        text = if (testState is ApiKeyTestState.Testing) "Testing…" else "Test Key",
+                        onClick = { onTestKey(draftKey.trim(), selectedProvider) },
+                        enabled = draftKey.trim().isNotEmpty() && testState !is ApiKeyTestState.Testing,
+                        subtle = true,
+                        modifier = Modifier.testTag("test_api_key_button")
+                    )
+                    if (testState is ApiKeyTestState.Testing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.5.dp
+                        )
+                    }
+                }
+
+                when (testState) {
+                    ApiKeyTestState.Idle, ApiKeyTestState.Testing -> Unit
+                    is ApiKeyTestState.Verified -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("api_key_test_verified")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.CheckCircle,
+                                    contentDescription = "Verified",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = testState.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                    is ApiKeyTestState.Failed -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.errorContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("api_key_test_failed")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.ErrorOutline,
+                                    contentDescription = "Verification failed",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = testState.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Text(
-                    text = "Stored locally in on-device preferences.",
+                    text = "Stored locally on-device. Map tiles use OpenStreetMap/CARTO without a key; Geoapify/LocationIQ keys authenticate place search.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

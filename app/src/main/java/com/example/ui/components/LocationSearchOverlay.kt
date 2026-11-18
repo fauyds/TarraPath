@@ -33,8 +33,10 @@ import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material3.Icon
@@ -286,6 +288,9 @@ fun LocationSearchBarAndResults(
                         }
 
                         searchState.errorMessage != null && searchState.results.isEmpty() -> {
+                            val isKeyError = searchState.errorMessage.contains("rejected", ignoreCase = true) ||
+                                searchState.errorMessage.contains("API key", ignoreCase = true) ||
+                                searchState.errorMessage.contains("token", ignoreCase = true)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -298,15 +303,23 @@ fun LocationSearchBarAndResults(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Filled.SearchOff,
+                                        imageVector = if (isKeyError) Icons.Filled.Key else Icons.Filled.SearchOff,
                                         contentDescription = "Search failed",
                                         tint = MaterialTheme.colorScheme.error
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Text(
-                                        text = stringResource(R.string.search_error_retry),
+                                        text = if (isKeyError) {
+                                            searchState.errorMessage
+                                        } else {
+                                            stringResource(R.string.search_error_retry)
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (isKeyError) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -319,55 +332,95 @@ fun LocationSearchBarAndResults(
                         }
 
                         searchState.hasSearched && !searchState.isSearching && searchState.results.isEmpty() -> {
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.SearchOff,
-                                    contentDescription = "No results",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = stringResource(R.string.search_empty_results),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Filled.SearchOff,
+                                        contentDescription = "No results",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = stringResource(R.string.search_empty_results),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                searchState.activeProviderLabel?.let { providerLabel ->
+                                    SearchProviderAttributionRow(providerLabel = providerLabel)
+                                }
                             }
                         }
 
                         searchState.results.isNotEmpty() -> {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 310.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                itemsIndexed(
-                                    items = searchState.results,
-                                    key = { _, item -> item.id }
-                                ) { idx, item ->
-                                    SearchResultRow(
-                                        result = item,
-                                        index = idx,
-                                        totalCount = searchState.results.size,
-                                        telemetry = telemetry,
-                                        onSelect = {
-                                            keyboardController?.hide()
-                                            focusManager.clearFocus()
-                                            onSelectResult(item)
-                                        },
-                                        onQuickPin = if (item.source != SearchResultSource.SAVED_PIN) {
-                                            {
+                                if (searchState.errorMessage != null) {
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Key,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = searchState.errorMessage,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onErrorContainer
+                                            )
+                                        }
+                                    }
+                                }
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 310.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    itemsIndexed(
+                                        items = searchState.results,
+                                        key = { _, item -> item.id }
+                                    ) { idx, item ->
+                                        SearchResultRow(
+                                            result = item,
+                                            index = idx,
+                                            totalCount = searchState.results.size,
+                                            telemetry = telemetry,
+                                            onSelect = {
                                                 keyboardController?.hide()
                                                 focusManager.clearFocus()
-                                                onQuickPinResult(item)
-                                            }
-                                        } else null
-                                    )
+                                                onSelectResult(item)
+                                            },
+                                            onQuickPin = if (item.source != SearchResultSource.SAVED_PIN) {
+                                                {
+                                                    keyboardController?.hide()
+                                                    focusManager.clearFocus()
+                                                    onQuickPinResult(item)
+                                                }
+                                            } else null
+                                        )
+                                    }
+                                }
+                                if (searchState.hasSearched && !searchState.isSearching) {
+                                    searchState.activeProviderLabel?.let { providerLabel ->
+                                        SearchProviderAttributionRow(providerLabel = providerLabel)
+                                    }
                                 }
                             }
                         }
@@ -601,5 +654,33 @@ fun SelectedSearchPlaceBanner(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SearchProviderAttributionRow(
+    providerLabel: String,
+    modifier: Modifier = Modifier
+) {
+    val usesApiKey = providerLabel.contains("API Key", ignoreCase = true)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .testTag("search_provider_attribution"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = if (usesApiKey) Icons.Filled.Key else Icons.Filled.Public,
+            contentDescription = null,
+            tint = if (usesApiKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(13.dp)
+        )
+        Text(
+            text = "Search via $providerLabel",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (usesApiKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

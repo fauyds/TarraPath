@@ -13,6 +13,7 @@ import com.example.data.model.AchievementCatalog
 import com.example.data.model.AchievementDefinition
 import com.example.data.model.AchievementUiItem
 import com.example.data.model.ActiveRecordingState
+import com.example.data.model.ApiKeyTestState
 import com.example.data.model.ApiProvider
 import com.example.data.model.DistrictInfo
 import com.example.data.model.LatLonPoint
@@ -24,6 +25,7 @@ import com.example.data.model.MarkerStyle
 import com.example.data.model.SearchPlaceResult
 import com.example.data.model.ThemeMode
 import com.example.data.preferences.UserPreferencesRepository
+import com.example.data.remote.ApiKeyRejectedException
 import com.example.data.remote.LocationSearchService
 import com.example.data.repository.TerraRepository
 import com.example.data.sensors.LocationTracker
@@ -86,6 +88,9 @@ class TerraViewModel(
     private val _selectedSearchPlace = MutableStateFlow<SearchPlaceResult?>(null)
     val selectedSearchPlace: StateFlow<SearchPlaceResult?> = _selectedSearchPlace.asStateFlow()
 
+    private val _apiKeyTestState = MutableStateFlow<ApiKeyTestState>(ApiKeyTestState.Idle)
+    val apiKeyTestState: StateFlow<ApiKeyTestState> = _apiKeyTestState.asStateFlow()
+
     val highlightedRoutePoints: StateFlow<List<RoutePointEntity>> = _highlightedRouteId
         .flatMapLatest { routeId ->
             if (routeId == null) flowOf(emptyList())
@@ -105,10 +110,10 @@ class TerraViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val apiKey: StateFlow<String> = preferences.apiKey
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
     val apiProvider: StateFlow<ApiProvider> = preferences.apiProvider
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ApiProvider.CUSTOM_GENERAL)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ApiProvider.CUSTOM_GENERAL)
 
     val mapDisplaySettings: StateFlow<MapDisplaySettings> = preferences.mapDisplaySettings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MapDisplaySettings())
@@ -493,13 +498,34 @@ class TerraViewModel(
         viewModelScope.launch {
             preferences.setApiProvider(provider)
             preferences.setApiKey(key)
+            _apiKeyTestState.value = ApiKeyTestState.Idle
         }
     }
 
     fun clearApiKey() {
         viewModelScope.launch {
             preferences.setApiKey("")
+            _apiKeyTestState.value = ApiKeyTestState.Idle
         }
+    }
+
+    fun testApiKey(key: String, provider: ApiProvider) {
+        viewModelScope.launch {
+            _apiKeyTestState.value = ApiKeyTestState.Testing
+            val result = locationSearchService.verifyApiKey(key, provider)
+            _apiKeyTestState.value = result.fold(
+                onSuccess = { msg -> ApiKeyTestState.Verified(msg) },
+                onFailure = { err ->
+                    ApiKeyTestState.Failed(
+                        err.localizedMessage ?: "Verification failed. Check your connection and key."
+                    )
+                }
+            )
+        }
+    }
+
+    fun resetApiKeyTestState() {
+        _apiKeyTestState.value = ApiKeyTestState.Idle
     }
 
     fun setEasyModeEnabled(enabled: Boolean) {
@@ -636,33 +662,38 @@ class TerraViewModel(
         val telemetry = _locationTelemetry.value
         val effectiveLat = biasLat ?: if (telemetry.hasFix) telemetry.latitude else null
         val effectiveLon = biasLon ?: if (telemetry.hasFix) telemetry.longitude else null
-        val remote = locationSearchService.searchRemotePlaces(
+        val activeKey = preferences.apiKey.first()
+        val activeProvider = preferences.apiProvider.first()
+        val remote = locationSearchService.searchRemotePlacesWithProvider(
             query = query,
             biasLat = effectiveLat,
             biasLon = effectiveLon,
-            apiKey = apiKey.value,
-            apiProvider = apiProvider.value
+            apiKey = activeKey,
+            apiProvider = activeProvider
         )
-        remote.onSuccess { osmResults ->
+        remote.onSuccess { outcome ->
             _locationSearchState.update { state ->
                 if (state.query.trim() != query) state
                 else state.copy(
                     isSearching = false,
-                    results = (localResults + osmResults).distinctBy { it.id },
+                    results = (localResults + outcome.results).distinctBy { it.id },
                     errorMessage = null,
-                    hasSearched = true
+                    hasSearched = true,
+                    activeProviderLabel = outcome.providerLabel
                 )
             }
         }.onFailure { err ->
+            val keyRejected = err is ApiKeyRejectedException
             _locationSearchState.update { state ->
                 if (state.query.trim() != query) state
                 else state.copy(
                     isSearching = false,
                     results = localResults,
-                    errorMessage = if (localResults.isEmpty()) {
+                    errorMessage = if (keyRejected || localResults.isEmpty()) {
                         err.localizedMessage ?: "Search unavailable offline"
                     } else null,
-                    hasSearched = true
+                    hasSearched = true,
+                    activeProviderLabel = null
                 )
             }
         }

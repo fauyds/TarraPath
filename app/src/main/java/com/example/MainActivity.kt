@@ -110,6 +110,7 @@ fun TerraPathApp(appContainer: AppContainer) {
     val customAccentColorArgb by viewModel.customAccentColorArgb.collectAsStateWithLifecycle()
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val apiProvider by viewModel.apiProvider.collectAsStateWithLifecycle()
+    val apiKeyTestState by viewModel.apiKeyTestState.collectAsStateWithLifecycle()
     val mapSettings by viewModel.mapDisplaySettings.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()
     val isDarkTheme = when (themeMode) {
@@ -398,12 +399,17 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 customAccentColorArgb = customAccentColorArgb,
                                 apiKey = apiKey,
                                 apiProvider = apiProvider,
+                                apiKeyTestState = apiKeyTestState,
                                 mapSettings = mapSettings,
                                 onSelectThemeMode = { viewModel.setThemeMode(it) },
                                 onSetCustomAccentColor = { viewModel.setCustomAccentColor(it) },
                                 onSaveApiKeyConfig = { key, provider ->
                                     viewModel.saveApiKeyConfig(key, provider)
                                 },
+                                onTestApiKey = { key, provider ->
+                                    viewModel.testApiKey(key, provider)
+                                },
+                                onResetApiKeyTest = { viewModel.resetApiKeyTestState() },
                                 onClearApiKey = { viewModel.clearApiKey() },
                                 onToggleEasyMode = { viewModel.setEasyModeEnabled(it) },
                                 onToggleSmoothFade = { viewModel.setSmoothFadeEnabled(it) },
