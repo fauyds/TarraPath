@@ -49,8 +49,10 @@ import com.example.data.model.LocationTelemetry
 import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MapPalette
 import com.example.data.model.MarkerCategory
+import com.example.data.model.MarkerStyle
 import com.example.data.model.SearchPlaceResult
 import com.example.domain.GeoGrid
+import com.example.ui.components.ColorPickerMath
 import com.example.ui.icons.GoogleIconRegistry
 import kotlinx.coroutines.delay
 import org.osmdroid.events.MapListener
@@ -163,6 +165,7 @@ fun TerraMapCanvas(
     searchedPlace: SearchPlaceResult?,
     telemetry: LocationTelemetry,
     showFogOfWar: Boolean = true,
+    revealedMarkerId: Long? = null,
     onUserPan: () -> Unit,
     onLongPressCoordinate: (lat: Double, lon: Double) -> Unit,
     onMarkerClick: (MapMarkerEntity) -> Unit,
@@ -377,7 +380,8 @@ fun TerraMapCanvas(
         searchedPlace = searchedPlace,
         telemetry = telemetry,
         pulseProgress = pulseProgress,
-        showFogOfWar = showFogOfWar
+        showFogOfWar = showFogOfWar,
+        revealedMarkerId = revealedMarkerId
     )
     mapView.invalidate()
 
@@ -418,6 +422,7 @@ private class TerraOsmOverlay(
     private var telemetry: LocationTelemetry = LocationTelemetry()
     private var pulseProgress: Float = 0f
     private var showFogOfWar: Boolean = true
+    private var revealedMarkerId: Long? = null
 
     private val tmpPt1 = Point()
     private val tmpPt2 = Point()
@@ -472,7 +477,8 @@ private class TerraOsmOverlay(
         searchedPlace: SearchPlaceResult?,
         telemetry: LocationTelemetry,
         pulseProgress: Float,
-        showFogOfWar: Boolean
+        showFogOfWar: Boolean,
+        revealedMarkerId: Long?
     ) {
         this.palette = palette
         this.isDarkTheme = isDarkTheme
@@ -488,6 +494,7 @@ private class TerraOsmOverlay(
         this.telemetry = telemetry
         this.pulseProgress = pulseProgress
         this.showFogOfWar = showFogOfWar
+        this.revealedMarkerId = revealedMarkerId
     }
 
     override fun onLongPress(e: MotionEvent, mapView: MapView): Boolean {
@@ -688,42 +695,94 @@ private class TerraOsmOverlay(
             )
         }
 
-        // 4. Custom Map Markers with Centered Google Material Icons (stay upright during camera rotation)
-        val iconPx = (20f * density).roundToInt().coerceAtLeast(24)
+        // 4. Custom Map Markers with Selected MarkerStyle & Centered Google Material Icons (upright during camera rotation)
         for (marker in markers) {
             proj.toPixels(GeoPoint(marker.latitude, marker.longitude), tmpPt1)
             val mx = tmpPt1.x.toFloat()
             val my = tmpPt1.y.toFloat()
             if (mx < -150f || mx > mapView.width + 150f || my < -150f || my > mapView.height + 150f) continue
 
-            val radius = 17f * density
             val cat = MarkerCategory.entries.firstOrNull { it.name == marker.categoryName } ?: MarkerCategory.LANDMARK
             val effectiveIconName = marker.iconName.ifBlank { cat.defaultIconName }
-            val iconBitmap = GoogleIconRegistry.renderCenteredIconBitmap(effectiveIconName, iconPx)
+            val markerComposeColor = Color(marker.colorArgb.toInt())
+            val markerColorInt = markerComposeColor.toArgb()
 
             canvas.save()
             if (mapBearing != 0f) {
                 canvas.rotate(-mapBearing, mx, my)
             }
 
-            fillPaint.color = android.graphics.Color.WHITE
-            canvas.drawCircle(mx, my, radius + 2.5f * density, fillPaint)
-            fillPaint.color = marker.colorArgb.toInt()
-            canvas.drawCircle(mx, my, radius, fillPaint)
+            val labelOffsetRadius: Float
+            when (mapSettings.markerStyle) {
+                MarkerStyle.ICON_ONLY -> {
+                    val iconPx = (28f * density).roundToInt().coerceAtLeast(32)
+                    val iconBitmap = GoogleIconRegistry.renderStyledIconBitmap(
+                        iconName = effectiveIconName,
+                        sizePx = iconPx,
+                        tintColor = markerColorInt,
+                        outlineColor = null
+                    )
+                    canvas.drawBitmap(
+                        iconBitmap,
+                        mx - iconBitmap.width / 2f,
+                        my - iconBitmap.height / 2f,
+                        iconBitmapPaint
+                    )
+                    labelOffsetRadius = iconBitmap.height / 2f
+                }
 
-            // Draw real Google Material icon optically centered at (mx, my)
-            canvas.drawBitmap(
-                iconBitmap,
-                mx - iconBitmap.width / 2f,
-                my - iconBitmap.height / 2f,
-                iconBitmapPaint
-            )
+                MarkerStyle.ICON_OUTLINE -> {
+                    val iconPx = (30f * density).roundToInt().coerceAtLeast(34)
+                    val outlineColorInt = ColorPickerMath.adaptiveOutlineColor(markerComposeColor).toArgb()
+                    val iconBitmap = GoogleIconRegistry.renderStyledIconBitmap(
+                        iconName = effectiveIconName,
+                        sizePx = iconPx,
+                        tintColor = markerColorInt,
+                        outlineColor = outlineColorInt,
+                        outlineWidthPx = 3.8f * density
+                    )
+                    canvas.drawBitmap(
+                        iconBitmap,
+                        mx - iconBitmap.width / 2f,
+                        my - iconBitmap.height / 2f,
+                        iconBitmapPaint
+                    )
+                    labelOffsetRadius = iconBitmap.height / 2f
+                }
 
-            if (mapSettings.showMarkerLabels) {
+                MarkerStyle.CIRCLE_ICON -> {
+                    val radius = 17f * density
+                    val outlineColorInt = ColorPickerMath.adaptiveOutlineColor(markerComposeColor).toArgb()
+                    val contentTintInt = ColorPickerMath.contrastTextColor(markerComposeColor).toArgb()
+                    fillPaint.color = outlineColorInt
+                    canvas.drawCircle(mx, my, radius + 2.5f * density, fillPaint)
+                    fillPaint.color = markerColorInt
+                    canvas.drawCircle(mx, my, radius, fillPaint)
+
+                    val iconPx = (20f * density).roundToInt().coerceAtLeast(24)
+                    val iconBitmap = GoogleIconRegistry.renderStyledIconBitmap(
+                        iconName = effectiveIconName,
+                        sizePx = iconPx,
+                        tintColor = contentTintInt,
+                        outlineColor = null
+                    )
+                    canvas.drawBitmap(
+                        iconBitmap,
+                        mx - iconBitmap.width / 2f,
+                        my - iconBitmap.height / 2f,
+                        iconBitmapPaint
+                    )
+                    labelOffsetRadius = radius
+                }
+            }
+
+            val shouldShowMarkerLabel = (!mapSettings.disableCreatedMarkerLabels && mapSettings.showMarkerLabels) ||
+                (mapSettings.disableCreatedMarkerLabels && marker.id == revealedMarkerId)
+            if (shouldShowMarkerLabel) {
                 val textWidth = labelTextPaint.measureText(marker.title)
                 val padX = 7f * density
                 val padY = 3.5f * density
-                val labelTop = my + radius + 5f * density
+                val labelTop = my + labelOffsetRadius + 5f * density
                 labelBgRect.set(
                     mx - textWidth / 2f - padX,
                     labelTop,
@@ -863,7 +922,8 @@ fun MiniMapPalettePreview(
     showStreetLabels: Boolean = false,
     showMarkerLabels: Boolean = false,
     showSectorLabels: Boolean = false,
-    isDarkTheme: Boolean = false
+    isDarkTheme: Boolean = false,
+    markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON
 ) {
     val density = LocalDensity.current.density
     val textPaint = remember(isDarkTheme, density) {
@@ -967,16 +1027,67 @@ fun MiniMapPalettePreview(
         )
 
         if (routePoints.isEmpty()) {
-            // Sample pin on preview
+            // Sample pin on preview reflecting active MarkerStyle
             val px = w * 0.72f
             val py = h * 0.34f
-            drawCircle(color = Color.White, radius = 10f * density, center = Offset(px, py))
-            drawCircle(color = Color(0xFF16A34A), radius = 8f * density, center = Offset(px, py))
+            val sampleColor = Color(0xFF16A34A)
+            val sampleColorInt = sampleColor.toArgb()
+            val sampleOutline = ColorPickerMath.adaptiveOutlineColor(sampleColor)
+            val sampleContentTint = ColorPickerMath.contrastTextColor(sampleColor).toArgb()
+            val previewBitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+            when (markerStyle) {
+                MarkerStyle.ICON_ONLY -> {
+                    val bmp = GoogleIconRegistry.renderStyledIconBitmap(
+                        iconName = "Park",
+                        sizePx = (22f * density).roundToInt().coerceAtLeast(24),
+                        tintColor = sampleColorInt,
+                        outlineColor = null
+                    )
+                    drawContext.canvas.nativeCanvas.drawBitmap(
+                        bmp,
+                        px - bmp.width / 2f,
+                        py - bmp.height / 2f,
+                        previewBitmapPaint
+                    )
+                }
+                MarkerStyle.ICON_OUTLINE -> {
+                    val bmp = GoogleIconRegistry.renderStyledIconBitmap(
+                        iconName = "Park",
+                        sizePx = (24f * density).roundToInt().coerceAtLeast(26),
+                        tintColor = sampleColorInt,
+                        outlineColor = sampleOutline.toArgb(),
+                        outlineWidthPx = 3f * density
+                    )
+                    drawContext.canvas.nativeCanvas.drawBitmap(
+                        bmp,
+                        px - bmp.width / 2f,
+                        py - bmp.height / 2f,
+                        previewBitmapPaint
+                    )
+                }
+                MarkerStyle.CIRCLE_ICON -> {
+                    drawCircle(color = sampleOutline, radius = 11.5f * density, center = Offset(px, py))
+                    drawCircle(color = sampleColor, radius = 9.5f * density, center = Offset(px, py))
+                    val bmp = GoogleIconRegistry.renderStyledIconBitmap(
+                        iconName = "Park",
+                        sizePx = (13f * density).roundToInt().coerceAtLeast(16),
+                        tintColor = sampleContentTint,
+                        outlineColor = null
+                    )
+                    drawContext.canvas.nativeCanvas.drawBitmap(
+                        bmp,
+                        px - bmp.width / 2f,
+                        py - bmp.height / 2f,
+                        previewBitmapPaint
+                    )
+                }
+            }
             if (showMarkerLabels) {
                 drawContext.canvas.nativeCanvas.drawText(
                     "Park",
                     px,
-                    py + 21f * density,
+                    py + 22f * density,
                     textPaint
                 )
             }

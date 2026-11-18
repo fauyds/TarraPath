@@ -6,9 +6,11 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.model.ApiProvider
 import com.example.data.model.MarkerCategory
+import com.example.data.model.MarkerStyle
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.remote.LocationSearchService
 import com.example.ui.components.ColorPickerMath
+import com.example.ui.icons.GoogleIconRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -87,5 +89,75 @@ class SettingsAndColorPickerTest {
         prefs.setApiKey("")
         assertNull(prefs.customAccentColorArgb.first())
         assertTrue(prefs.apiKey.first().isEmpty())
+
+        MarkerStyle.entries.forEach { style ->
+            prefs.setMarkerStyle(style)
+            assertEquals(style, prefs.mapDisplaySettings.first().markerStyle)
+        }
+
+        prefs.setUiBlurEnabled(true)
+        prefs.setDisableCreatedMarkerLabels(true)
+        val updatedSettings = prefs.mapDisplaySettings.first()
+        assertTrue(updatedSettings.uiBlurEnabled)
+        assertTrue(updatedSettings.disableCreatedMarkerLabels)
+
+        prefs.setUiBlurEnabled(false)
+        prefs.setDisableCreatedMarkerLabels(false)
+        val resetSettings = prefs.mapDisplaySettings.first()
+        assertTrue(!resetSettings.uiBlurEnabled)
+        assertTrue(!resetSettings.disableCreatedMarkerLabels)
+    }
+
+    @Test
+    fun adaptiveOutlineColor_adaptsPolarityAndHueToMarkerColor() {
+        val brightYellow = Color(0xFFFDE047)
+        val deepBlue = Color(0xFF1E3A8A)
+        val crimson = Color(0xFFE11D48)
+
+        val yellowOutline = ColorPickerMath.adaptiveOutlineColor(brightYellow)
+        val blueOutline = ColorPickerMath.adaptiveOutlineColor(deepBlue)
+        val redOutline = ColorPickerMath.adaptiveOutlineColor(crimson)
+
+        // Bright fill should produce a dark outline; dark fills should produce light outlines
+        assertTrue(yellowOutline.red < 0.35f && yellowOutline.green < 0.35f && yellowOutline.blue < 0.35f)
+        assertTrue(blueOutline.red > 0.80f && blueOutline.green > 0.80f && blueOutline.blue > 0.80f)
+        assertTrue(redOutline.red > 0.80f && redOutline.green > 0.80f && redOutline.blue > 0.80f)
+        // Different input colors produce distinct hue-tinted outlines
+        assertTrue(blueOutline != redOutline)
+    }
+
+    @Test
+    fun renderStyledIconBitmap_generatesDistinctBitmapsForAllStyles() {
+        val colorInt = android.graphics.Color.rgb(37, 99, 235)
+        val altColorInt = android.graphics.Color.rgb(225, 29, 72)
+        val outlineInt = android.graphics.Color.WHITE
+
+        val iconOnly = GoogleIconRegistry.renderStyledIconBitmap(
+            iconName = "Home",
+            sizePx = 64,
+            tintColor = colorInt,
+            outlineColor = null
+        )
+        val iconOutline = GoogleIconRegistry.renderStyledIconBitmap(
+            iconName = "Home",
+            sizePx = 64,
+            tintColor = colorInt,
+            outlineColor = outlineInt,
+            outlineWidthPx = 6f
+        )
+        val iconAltTint = GoogleIconRegistry.renderStyledIconBitmap(
+            iconName = "Home",
+            sizePx = 64,
+            tintColor = altColorInt,
+            outlineColor = null
+        )
+
+        assertEquals(64, iconOnly.width)
+        assertEquals(64, iconOnly.height)
+        assertEquals(64, iconOutline.width)
+        assertEquals(64, iconOutline.height)
+        assertEquals(android.graphics.Bitmap.Config.ARGB_8888, iconOutline.config)
+        assertTrue(iconOnly !== iconOutline)
+        assertTrue(iconOnly !== iconAltTint)
     }
 }

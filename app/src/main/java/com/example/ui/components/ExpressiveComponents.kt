@@ -53,9 +53,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import android.os.Build
+import android.view.WindowManager
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import com.example.data.model.AchievementDefinition
+import com.example.data.model.MarkerStyle
+import com.example.ui.icons.GoogleIconRegistry
 import com.example.ui.theme.ExpressiveTheme
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 /**
  * Grouped list card geometry:
@@ -91,14 +109,22 @@ fun ExpressiveCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+    val resolvedBorder = border ?: if (blurOn) {
+        BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+    } else {
+        null
+    }
+    val resolvedElevation = if (blurOn) 0.dp else shadowElevation
+
     Surface(
         modifier = modifier.then(
             if (onClick != null) Modifier.clip(shape).clickable(onClick = onClick) else Modifier
         ),
         shape = shape,
         color = containerColor,
-        shadowElevation = shadowElevation,
-        border = border
+        shadowElevation = resolvedElevation,
+        border = resolvedBorder
     ) {
         Column(content = content)
     }
@@ -447,6 +473,172 @@ fun AchievementUnlockedBanner(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun MarkerStylePreviewBadge(
+    iconName: String,
+    colorArgb: Long,
+    markerStyle: MarkerStyle,
+    modifier: Modifier = Modifier,
+    badgeSize: Dp = 42.dp
+) {
+    val density = LocalDensity.current.density
+    val fillColor = Color(colorArgb.toInt())
+    val fillArgb = fillColor.toArgb()
+    val outlineColor = ColorPickerMath.adaptiveOutlineColor(fillColor)
+    val contentColor = ColorPickerMath.contrastTextColor(fillColor)
+
+    when (markerStyle) {
+        MarkerStyle.ICON_ONLY -> {
+            val px = ((badgeSize.value * 0.72f) * density).roundToInt().coerceAtLeast(24)
+            val bmp = androidx.compose.runtime.remember(iconName, px, fillArgb) {
+                GoogleIconRegistry.renderStyledIconBitmap(
+                    iconName = iconName,
+                    sizePx = px,
+                    tintColor = fillArgb,
+                    outlineColor = null
+                )
+            }
+            Box(
+                modifier = modifier.size(badgeSize),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = iconName,
+                    modifier = Modifier.size(badgeSize * 0.72f)
+                )
+            }
+        }
+        MarkerStyle.ICON_OUTLINE -> {
+            val px = ((badgeSize.value * 0.78f) * density).roundToInt().coerceAtLeast(28)
+            val outlineArgb = outlineColor.toArgb()
+            val strokePx = 3.2f * density
+            val bmp = androidx.compose.runtime.remember(iconName, px, fillArgb, outlineArgb, strokePx) {
+                GoogleIconRegistry.renderStyledIconBitmap(
+                    iconName = iconName,
+                    sizePx = px,
+                    tintColor = fillArgb,
+                    outlineColor = outlineArgb,
+                    outlineWidthPx = strokePx
+                )
+            }
+            Box(
+                modifier = modifier.size(badgeSize),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    bitmap = bmp.asImageBitmap(),
+                    contentDescription = iconName,
+                    modifier = Modifier.size(badgeSize * 0.78f)
+                )
+            }
+        }
+        MarkerStyle.CIRCLE_ICON -> {
+            val px = ((badgeSize.value * 0.52f) * density).roundToInt().coerceAtLeast(20)
+            val contentArgb = contentColor.toArgb()
+            val bmp = androidx.compose.runtime.remember(iconName, px, contentArgb) {
+                GoogleIconRegistry.renderStyledIconBitmap(
+                    iconName = iconName,
+                    sizePx = px,
+                    tintColor = contentArgb,
+                    outlineColor = null
+                )
+            }
+            Surface(
+                shape = CircleShape,
+                color = fillColor,
+                border = BorderStroke(2.dp, outlineColor),
+                modifier = modifier.size(badgeSize)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = iconName,
+                        modifier = Modifier.size(badgeSize * 0.52f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun Modifier.conditionalBlur(enabled: Boolean, radius: Dp = 12.dp): Modifier {
+    return if (enabled && radius > 0.dp && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        this.blur(radius = radius, edgeTreatment = BlurredEdgeTreatment.Rectangle)
+    } else {
+        this
+    }
+}
+
+@Composable
+fun AmbientUiBlurBackdrop(
+    visible: Boolean,
+    modifier: Modifier = Modifier
+) {
+    if (!visible) return
+    val primaryGlow = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+    val tertiaryGlow = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.20f)
+    val secondaryGlow = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f)
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .conditionalBlur(enabled = true, radius = 56.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(260.dp)
+                .offset(x = (-40).dp, y = (-30).dp)
+                .background(
+                    brush = Brush.radialGradient(listOf(primaryGlow, Color.Transparent)),
+                    shape = CircleShape
+                )
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .size(240.dp)
+                .offset(x = 60.dp, y = (-40).dp)
+                .background(
+                    brush = Brush.radialGradient(listOf(tertiaryGlow, Color.Transparent)),
+                    shape = CircleShape
+                )
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .size(280.dp)
+                .offset(x = (-30).dp, y = 40.dp)
+                .background(
+                    brush = Brush.radialGradient(listOf(secondaryGlow, Color.Transparent)),
+                    shape = CircleShape
+                )
+        )
+    }
+}
+
+@Composable
+fun ApplyDialogBlurIfEnabled(blurRadiusPx: Int = 36) {
+    val uiBlurEnabled = ExpressiveTheme.colors.uiBlurEnabled
+    if (!uiBlurEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window ?: return
+
+    DisposableEffect(dialogWindow, uiBlurEnabled, blurRadiusPx) {
+        dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+        val params = dialogWindow.attributes
+        params.blurBehindRadius = blurRadiusPx
+        dialogWindow.attributes = params
+        dialogWindow.setBackgroundBlurRadius(blurRadiusPx)
+        onDispose {
+            dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+            val resetParams = dialogWindow.attributes
+            resetParams.blurBehindRadius = 0
+            dialogWindow.attributes = resetParams
+            dialogWindow.setBackgroundBlurRadius(0)
         }
     }
 }

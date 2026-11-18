@@ -116,13 +116,19 @@ fun LocationSearchBarAndResults(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         // Expressive Pill Search Input
+        val blurOn = ExpressiveTheme.colors.uiBlurEnabled
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .defaultMinSize(minHeight = 50.dp),
             shape = RoundedCornerShape(percent = 50),
             color = ExpressiveTheme.colors.cardSurface,
-            shadowElevation = 4.dp
+            shadowElevation = if (blurOn) 0.dp else 4.dp,
+            border = if (blurOn) {
+                androidx.compose.foundation.BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+            } else {
+                null
+            }
         ) {
             Row(
                 modifier = Modifier

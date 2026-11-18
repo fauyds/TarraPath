@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Gradient
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LocationSearching
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Signpost
 import androidx.compose.material.icons.filled.Tag
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -42,6 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -66,13 +69,18 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.ApiProvider
 import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MapPalette
+import com.example.data.model.MarkerStyle
 import com.example.data.model.ThemeMode
+import com.example.ui.components.AmbientUiBlurBackdrop
+import com.example.ui.components.ApplyDialogBlurIfEnabled
 import com.example.ui.components.ColorPickerMath
 import com.example.ui.components.CustomColorPickerDialog
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressiveHorizontalSegmentedSelector
 import com.example.ui.components.ExpressivePillButton
 import com.example.ui.components.GoogleIconLibraryDialog
+import com.example.ui.components.MarkerStylePreviewBadge
+import com.example.ui.components.conditionalBlur
 import com.example.ui.components.groupedCardShape
 import com.example.ui.icons.GoogleIconRegistry
 import com.example.ui.map.MiniMapPalettePreview
@@ -96,8 +104,11 @@ fun SettingsScreen(
     onToggleSmoothFade: (Boolean) -> Unit,
     onToggleStreetNames: (Boolean) -> Unit,
     onToggleMarkerLabels: (Boolean) -> Unit,
+    onToggleDisableCreatedMarkerLabels: (Boolean) -> Unit,
     onToggleSearchLabels: (Boolean) -> Unit,
     onToggleSectorLabels: (Boolean) -> Unit,
+    onToggleUiBlur: (Boolean) -> Unit,
+    onSelectMarkerStyle: (MarkerStyle) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -113,16 +124,21 @@ fun SettingsScreen(
         ColorPickerMath.formatHexRgb(displayedAccentColor)
     }
 
+    val anyDialogOpen = showIconBrowser || showThemeColorPicker || showApiKeyDialog
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(ExpressiveTheme.colors.appBackground),
         contentAlignment = Alignment.TopCenter
     ) {
+        AmbientUiBlurBackdrop(visible = mapSettings.uiBlurEnabled)
+
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxSize()
+                .conditionalBlur(enabled = mapSettings.uiBlurEnabled && anyDialogOpen, radius = 10.dp)
                 .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -150,9 +166,10 @@ fun SettingsScreen(
                             palette = activePalette,
                             showGridLines = mapSettings.showGridLines,
                             showStreetLabels = mapSettings.showStreetNames,
-                            showMarkerLabels = mapSettings.showMarkerLabels,
+                            showMarkerLabels = mapSettings.showMarkerLabels && !mapSettings.disableCreatedMarkerLabels,
                             showSectorLabels = mapSettings.showSectorLabels,
                             isDarkTheme = isDarkTheme,
+                            markerStyle = mapSettings.markerStyle,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(160.dp)
@@ -262,6 +279,15 @@ fun SettingsScreen(
                             }
                         }
                     }
+                    SettingToggleCard(
+                        icon = Icons.Filled.Gradient,
+                        title = "UI Blur",
+                        subtitle = "Enable frosted translucent cards and blur behind overlays and dialogs",
+                        checked = mapSettings.uiBlurEnabled,
+                        onCheckedChange = onToggleUiBlur,
+                        shape = RoundedCornerShape(16.dp),
+                        switchTestTag = "ui_blur_switch"
+                    )
                     Text(
                         text = "Map colors automatically follow Light and Dark mode.",
                         style = MaterialTheme.typography.bodySmall,
@@ -326,17 +352,26 @@ fun SettingsScreen(
                             subtitle = "Show street, neighborhood, and city names on OpenStreetMap tiles",
                             checked = mapSettings.showStreetNames,
                             onCheckedChange = onToggleStreetNames,
-                            shape = groupedCardShape(0, 4),
+                            shape = groupedCardShape(0, 5),
                             switchTestTag = "street_names_switch"
                         )
                         SettingToggleCard(
                             icon = Icons.Filled.Bookmark,
                             title = "Pin Marker Labels",
                             subtitle = "Display text title badges below your custom dropped pins",
-                            checked = mapSettings.showMarkerLabels,
+                            checked = mapSettings.showMarkerLabels && !mapSettings.disableCreatedMarkerLabels,
                             onCheckedChange = onToggleMarkerLabels,
-                            shape = groupedCardShape(1, 4),
+                            shape = groupedCardShape(1, 5),
                             switchTestTag = "marker_labels_switch"
+                        )
+                        SettingToggleCard(
+                            icon = Icons.Filled.TouchApp,
+                            title = "Disable Created Marker Labels",
+                            subtitle = "Hide labels on created markers; press a marker to show its label for 2 seconds",
+                            checked = mapSettings.disableCreatedMarkerLabels,
+                            onCheckedChange = onToggleDisableCreatedMarkerLabels,
+                            shape = groupedCardShape(2, 5),
+                            switchTestTag = "disable_marker_labels_switch"
                         )
                         SettingToggleCard(
                             icon = Icons.Filled.LocationSearching,
@@ -344,7 +379,7 @@ fun SettingsScreen(
                             subtitle = "Show the floating name tag under searched locations",
                             checked = mapSettings.showSearchLabels,
                             onCheckedChange = onToggleSearchLabels,
-                            shape = groupedCardShape(2, 4),
+                            shape = groupedCardShape(3, 5),
                             switchTestTag = "search_labels_switch"
                         )
                         SettingToggleCard(
@@ -353,16 +388,82 @@ fun SettingsScreen(
                             subtitle = "Show subtle sector index numbers inside map grid cells",
                             checked = mapSettings.showSectorLabels,
                             onCheckedChange = onToggleSectorLabels,
-                            shape = groupedCardShape(3, 4),
+                            shape = groupedCardShape(4, 5),
                             switchTestTag = "sector_labels_switch"
                         )
                     }
                 }
             }
 
-            // Google Icon Library Browser Entry
+            // Marker Style Chooser & Google Icon Library Browser Entry
             item {
+                val previewAccentArgb = displayedAccentColor.toArgb().toLong() and 0xFFFFFFFFL
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Marker Style",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val styles = MarkerStyle.entries
+                        styles.forEachIndexed { index, style ->
+                            val selected = mapSettings.markerStyle == style
+                            ExpressiveCard(
+                                shape = groupedCardShape(index, styles.size),
+                                border = if (selected) {
+                                    BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                                } else {
+                                    null
+                                },
+                                onClick = { onSelectMarkerStyle(style) },
+                                modifier = Modifier.testTag("marker_style_${style.name}")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 64.dp)
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = ExpressiveTheme.colors.nestedElementSurface,
+                                        modifier = Modifier.size(46.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            MarkerStylePreviewBadge(
+                                                iconName = "Place",
+                                                colorArgb = previewAccentArgb,
+                                                markerStyle = style,
+                                                badgeSize = 34.dp
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = style.label,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = style.subtitle,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    RadioButton(
+                                        selected = selected,
+                                        onClick = { onSelectMarkerStyle(style) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     Text(
                         text = "Markers & Icon Library",
                         style = MaterialTheme.typography.titleSmall,
@@ -546,9 +647,10 @@ private fun ApiKeySettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = ExpressiveTheme.colors.cardSurface,
+        containerColor = ExpressiveTheme.colors.dialogSurface,
         shape = RoundedCornerShape(24.dp),
         title = {
+            ApplyDialogBlurIfEnabled()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Filled.Key,

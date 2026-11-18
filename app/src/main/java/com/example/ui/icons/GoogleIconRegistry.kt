@@ -84,28 +84,63 @@ object GoogleIconRegistry {
     }
 
     fun renderCenteredIconBitmap(iconName: String, sizePx: Int): Bitmap {
+        return renderStyledIconBitmap(
+            iconName = iconName,
+            sizePx = sizePx,
+            tintColor = Color.WHITE,
+            outlineColor = null,
+            outlineWidthPx = 0f
+        )
+    }
+
+    fun renderStyledIconBitmap(
+        iconName: String,
+        sizePx: Int,
+        tintColor: Int = Color.WHITE,
+        outlineColor: Int? = null,
+        outlineWidthPx: Float = 0f
+    ): Bitmap {
         val safeSize = sizePx.coerceAtLeast(16)
-        val cacheKey = "${iconName}_$safeSize"
+        val hasOutline = outlineColor != null && outlineWidthPx > 0.5f
+        val safeStrokePx = if (hasOutline) outlineWidthPx.coerceAtLeast(1f) else 0f
+        val cacheKey = "${iconName}_${safeSize}_${tintColor}_${outlineColor ?: "none"}_${safeStrokePx.toInt()}"
         bitmapCache.get(cacheKey)?.let { return it }
 
         val vector = resolveIcon(iconName)
         val bitmap = Bitmap.createBitmap(safeSize, safeSize, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-            color = Color.WHITE
-        }
 
         val vw = vector.viewportWidth.coerceAtLeast(1f)
         val vh = vector.viewportHeight.coerceAtLeast(1f)
-        val scale = minOf(safeSize / vw, safeSize / vh)
+        val padding = if (hasOutline) safeStrokePx / 2f + 1.5f else 0f
+        val avail = (safeSize - padding * 2f).coerceAtLeast(8f)
+        val scale = minOf(avail / vw, avail / vh)
         val offsetX = (safeSize - vw * scale) / 2f
         val offsetY = (safeSize - vh * scale) / 2f
 
+        if (hasOutline && outlineColor != null) {
+            val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = safeStrokePx / scale
+                strokeJoin = Paint.Join.ROUND
+                strokeCap = Paint.Cap.ROUND
+                color = outlineColor
+            }
+            canvas.save()
+            canvas.translate(offsetX, offsetY)
+            canvas.scale(scale, scale)
+            drawVectorNode(canvas, vector.root, outlinePaint)
+            canvas.restore()
+        }
+
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = tintColor
+        }
         canvas.save()
         canvas.translate(offsetX, offsetY)
         canvas.scale(scale, scale)
-        drawVectorNode(canvas, vector.root, paint)
+        drawVectorNode(canvas, vector.root, fillPaint)
         canvas.restore()
 
         bitmapCache.put(cacheKey, bitmap)

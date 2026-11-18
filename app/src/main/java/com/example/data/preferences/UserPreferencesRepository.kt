@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.data.model.ApiProvider
 import com.example.data.model.MapDisplaySettings
+import com.example.data.model.MarkerStyle
 import com.example.data.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -32,6 +33,9 @@ class UserPreferencesRepository(private val context: Context) {
         val SHOW_SEARCH_LABELS = booleanPreferencesKey("show_search_labels")
         val SHOW_SECTOR_LABELS = booleanPreferencesKey("show_sector_labels")
         val SHOW_SMOOTH_FADE = booleanPreferencesKey("show_smooth_fade")
+        val DISABLE_CREATED_MARKER_LABELS = booleanPreferencesKey("disable_created_marker_labels")
+        val UI_BLUR_ENABLED = booleanPreferencesKey("ui_blur_enabled")
+        val MARKER_STYLE = stringPreferencesKey("marker_style")
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
@@ -48,14 +52,20 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     val mapDisplaySettings: Flow<MapDisplaySettings> = context.dataStore.data.map { prefs ->
+        val rawMarkerStyle = prefs[Keys.MARKER_STYLE] ?: MarkerStyle.CIRCLE_ICON.name
+        val parsedMarkerStyle = MarkerStyle.entries.firstOrNull { it.name == rawMarkerStyle }
+            ?: MarkerStyle.CIRCLE_ICON
         MapDisplaySettings(
             easyModeEnabled = prefs[Keys.EASY_MODE_ENABLED] ?: false,
             showGridLines = prefs[Keys.SHOW_GRID_LINES] ?: true,
             showStreetNames = prefs[Keys.SHOW_STREET_NAMES] ?: true,
             showMarkerLabels = prefs[Keys.SHOW_MARKER_LABELS] ?: true,
+            disableCreatedMarkerLabels = prefs[Keys.DISABLE_CREATED_MARKER_LABELS] ?: false,
             showSearchLabels = prefs[Keys.SHOW_SEARCH_LABELS] ?: true,
             showSectorLabels = prefs[Keys.SHOW_SECTOR_LABELS] ?: false,
-            smoothFadeEnabled = prefs[Keys.SHOW_SMOOTH_FADE] ?: true
+            smoothFadeEnabled = prefs[Keys.SHOW_SMOOTH_FADE] ?: true,
+            uiBlurEnabled = prefs[Keys.UI_BLUR_ENABLED] ?: false,
+            markerStyle = parsedMarkerStyle
         )
     }
 
@@ -146,5 +156,17 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setSmoothFadeEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.SHOW_SMOOTH_FADE] = enabled }
+    }
+
+    suspend fun setDisableCreatedMarkerLabels(disabled: Boolean) {
+        context.dataStore.edit { it[Keys.DISABLE_CREATED_MARKER_LABELS] = disabled }
+    }
+
+    suspend fun setUiBlurEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.UI_BLUR_ENABLED] = enabled }
+    }
+
+    suspend fun setMarkerStyle(style: MarkerStyle) {
+        context.dataStore.edit { it[Keys.MARKER_STYLE] = style.name }
     }
 }

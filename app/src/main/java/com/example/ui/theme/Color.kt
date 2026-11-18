@@ -95,7 +95,10 @@ data class ExpressiveColors(
     val buttonPrimary: Color,
     val buttonTertiarySubtle: Color,
     val selectorSelected: Color,
-    val selectorUnselected: Color
+    val selectorUnselected: Color,
+    val uiBlurEnabled: Boolean = false,
+    val frostedBorderColor: Color = Color.Transparent,
+    val dialogSurface: Color = cardSurface
 )
 
 val LocalExpressiveColors = staticCompositionLocalOf {
@@ -106,6 +109,9 @@ val LocalExpressiveColors = staticCompositionLocalOf {
         buttonPrimary = ForestPrimaryLight,
         buttonTertiarySubtle = SageTertiaryContainerLight.copy(alpha = 0.85f),
         selectorSelected = ForestPrimaryLight,
-        selectorUnselected = LightCardSurface
+        selectorUnselected = LightCardSurface,
+        uiBlurEnabled = false,
+        frostedBorderColor = Color.Transparent,
+        dialogSurface = LightCardSurface
     )
 }

@@ -110,6 +110,7 @@ fun TerraPathApp(appContainer: AppContainer) {
     val customAccentColorArgb by viewModel.customAccentColorArgb.collectAsStateWithLifecycle()
     val apiKey by viewModel.apiKey.collectAsStateWithLifecycle()
     val apiProvider by viewModel.apiProvider.collectAsStateWithLifecycle()
+    val mapSettings by viewModel.mapDisplaySettings.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()
     val isDarkTheme = when (themeMode) {
         ThemeMode.SYSTEM -> systemDark
@@ -120,7 +121,8 @@ fun TerraPathApp(appContainer: AppContainer) {
     TerraPathTheme(
         darkTheme = isDarkTheme,
         dynamicColor = true,
-        customAccentColorArgb = customAccentColorArgb
+        customAccentColorArgb = customAccentColorArgb,
+        uiBlurEnabled = mapSettings.uiBlurEnabled
     ) {
         val context = LocalContext.current
 
@@ -172,8 +174,6 @@ fun TerraPathApp(appContainer: AppContainer) {
                 launchPermissionRequest()
             }
         }
-
-        val mapSettings by viewModel.mapDisplaySettings.collectAsStateWithLifecycle()
 
         val colorScheme = MaterialTheme.colorScheme
         val activeMapPalette = remember(colorScheme, isDarkTheme, mapSettings.easyModeEnabled) {
@@ -410,8 +410,11 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onToggleGridLines = { viewModel.setShowGridLines(it) },
                                 onToggleStreetNames = { viewModel.setShowStreetNames(it) },
                                 onToggleMarkerLabels = { viewModel.setShowMarkerLabels(it) },
+                                onToggleDisableCreatedMarkerLabels = { viewModel.setDisableCreatedMarkerLabels(it) },
                                 onToggleSearchLabels = { viewModel.setShowSearchLabels(it) },
-                                onToggleSectorLabels = { viewModel.setShowSectorLabels(it) }
+                                onToggleSectorLabels = { viewModel.setShowSectorLabels(it) },
+                                onToggleUiBlur = { viewModel.setUiBlurEnabled(it) },
+                                onSelectMarkerStyle = { viewModel.setMarkerStyle(it) }
                             )
                         }
                     }

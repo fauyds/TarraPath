@@ -45,8 +45,6 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -91,21 +89,25 @@ import com.example.data.model.LocationTelemetry
 import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MapPalette
 import com.example.data.model.MarkerCategory
+import com.example.data.model.MarkerStyle
 import com.example.data.model.SearchPlaceResult
 import com.example.domain.GeoGrid
 import com.example.ui.PendingRouteSummary
+import com.example.ui.components.ApplyDialogBlurIfEnabled
 import com.example.ui.components.ColorPickerMath
 import com.example.ui.components.CustomColorPickerDialog
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressivePillButton
 import com.example.ui.components.GoogleIconLibraryDialog
 import com.example.ui.components.LocationSearchBarAndResults
+import com.example.ui.components.MarkerStylePreviewBadge
 import com.example.ui.components.SelectedSearchPlaceBanner
-import com.example.ui.icons.GoogleIconRegistry
+import com.example.ui.components.conditionalBlur
 import com.example.ui.map.MapControlCommands
 import com.example.ui.map.TerraMapCanvas
 import com.example.ui.theme.ExpressiveTheme
 import com.example.ui.theme.TelemetryTextStyle
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 private data class DropMarkerDraft(
@@ -173,10 +175,24 @@ fun ExploreScreen(
     }
 
     var showFilterStrip by remember { mutableStateOf(false) }
-    var showFogOfWar by remember { mutableStateOf(true) }
     var isSearchExpanded by remember { mutableStateOf(false) }
     var dropMarkerDraft by remember { mutableStateOf<DropMarkerDraft?>(null) }
     var selectedMarker by remember { mutableStateOf<MapMarkerEntity?>(null) }
+    var revealedMarkerId by remember { mutableStateOf<Long?>(null) }
+    var revealSeq by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(revealedMarkerId, revealSeq) {
+        if (revealedMarkerId != null) {
+            delay(2000L)
+            revealedMarkerId = null
+        }
+    }
+
+    LaunchedEffect(mapSettings.disableCreatedMarkerLabels) {
+        if (!mapSettings.disableCreatedMarkerLabels) {
+            revealedMarkerId = null
+        }
+    }
 
     BackHandler(enabled = isSearchExpanded) {
         isSearchExpanded = false
@@ -189,6 +205,10 @@ fun ExploreScreen(
     val highlightedLatLonPoints = remember(highlightedRoutePoints) {
         highlightedRoutePoints.map { LatLonPoint(it.latitude, it.longitude, it.speedKmh, it.timestamp) }
     }
+
+    val blurMapBehindOverlay = mapSettings.uiBlurEnabled && (
+        isSearchExpanded || pendingRouteSummary != null || dropMarkerDraft != null || selectedMarker != null
+    )
 
     Box(modifier = modifier.fillMaxSize()) {
         // Full-bleed OSMDroid Map with Fog-of-War, Routes, Markers & Live GPS
@@ -207,14 +227,26 @@ fun ExploreScreen(
             markers = visibleMarkers,
             searchedPlace = selectedSearchPlace,
             telemetry = telemetry,
-            showFogOfWar = showFogOfWar,
+            showFogOfWar = true,
+            revealedMarkerId = revealedMarkerId,
             onUserPan = { followUser = false },
             onLongPressCoordinate = { lat, lon ->
                 dropMarkerDraft = DropMarkerDraft(lat, lon)
             },
             onMarkerClick = { marker ->
-                selectedMarker = marker
-            }
+                if (mapSettings.disableCreatedMarkerLabels) {
+                    if (revealedMarkerId == marker.id) {
+                        revealedMarkerId = null
+                        selectedMarker = marker
+                    } else {
+                        revealedMarkerId = marker.id
+                        revealSeq++
+                    }
+                } else {
+                    selectedMarker = marker
+                }
+            },
+            modifier = Modifier.conditionalBlur(enabled = blurMapBehindOverlay, radius = 12.dp)
         )
 
         // Top HUD: Location Search Bar + District exploration stats + Marker category filter
@@ -527,6 +559,7 @@ fun ExploreScreen(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .conditionalBlur(enabled = mapSettings.uiBlurEnabled && isSearchExpanded, radius = 10.dp)
                 .padding(
                     end = 16.dp,
                     bottom = if (selectedSearchPlace != null && !isSearchExpanded) 186.dp else 104.dp
@@ -534,22 +567,6 @@ fun ExploreScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            MapControlCircleButton(
-                icon = if (showFogOfWar) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
-                contentDescription = if (showFogOfWar) "Peek under fog of war" else "Restore fog of war",
-                onClick = { showFogOfWar = !showFogOfWar },
-                containerColor = if (!showFogOfWar) {
-                    ExpressiveTheme.colors.buttonPrimary
-                } else {
-                    ExpressiveTheme.colors.cardSurface
-                },
-                contentColor = if (!showFogOfWar) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                testTag = "toggle_fog_peek"
-            )
             MapControlCircleButton(
                 icon = Icons.Filled.AddLocationAlt,
                 contentDescription = "Drop custom marker",
@@ -653,10 +670,16 @@ fun ExploreScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val blurOn = ExpressiveTheme.colors.uiBlurEnabled
                     Surface(
                         shape = RoundedCornerShape(percent = 50),
                         color = ExpressiveTheme.colors.cardSurface,
-                        shadowElevation = 3.dp
+                        shadowElevation = if (blurOn) 0.dp else 3.dp,
+                        border = if (blurOn) {
+                            BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+                        } else {
+                            null
+                        }
                     ) {
                         Text(
                             text = if (telemetry.hasFix) {
@@ -704,6 +727,7 @@ fun ExploreScreen(
             longitude = draft.longitude,
             initialTitle = draft.initialTitle,
             initialCategory = draft.initialCategory,
+            markerStyle = mapSettings.markerStyle,
             onConfirm = { title, note, category, colorArgb, iconName ->
                 onAddMarker(title, note, category, draft.latitude, draft.longitude, colorArgb, iconName)
                 dropMarkerDraft = null
@@ -717,6 +741,7 @@ fun ExploreScreen(
         MarkerDetailDialog(
             marker = marker,
             telemetry = telemetry,
+            markerStyle = mapSettings.markerStyle,
             onUpdateIcon = { chosenIcon ->
                 onUpdateMarkerIcon(marker, chosenIcon)
                 selectedMarker = marker.copy(iconName = chosenIcon)
@@ -744,6 +769,7 @@ private fun MapControlCircleButton(
     iconModifier: Modifier = Modifier,
     testTag: String = ""
 ) {
+    val blurOn = ExpressiveTheme.colors.uiBlurEnabled
     Surface(
         modifier = Modifier
             .size(48.dp)
@@ -752,7 +778,12 @@ private fun MapControlCircleButton(
             .then(if (testTag.isNotEmpty()) Modifier.testTag(testTag) else Modifier),
         shape = CircleShape,
         color = containerColor,
-        shadowElevation = 4.dp
+        shadowElevation = if (blurOn) 0.dp else 4.dp,
+        border = if (blurOn) {
+            BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+        } else {
+            null
+        }
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -858,9 +889,10 @@ private fun SaveRouteDialog(
 
     AlertDialog(
         onDismissRequest = onDiscard,
-        containerColor = ExpressiveTheme.colors.cardSurface,
+        containerColor = ExpressiveTheme.colors.dialogSurface,
         shape = RoundedCornerShape(20.dp),
         title = {
+            ApplyDialogBlurIfEnabled()
             Text(
                 text = "Save Recorded Route",
                 style = MaterialTheme.typography.headlineMedium
@@ -985,6 +1017,7 @@ private fun DropMarkerDialog(
     longitude: Double,
     initialTitle: String? = null,
     initialCategory: MarkerCategory? = null,
+    markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON,
     onConfirm: (title: String, note: String, category: MarkerCategory, colorArgb: Long, iconName: String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1000,9 +1033,6 @@ private fun DropMarkerDialog(
         mutableStateOf(initialTitle?.takeIf { it.isNotBlank() } ?: startCategory.label)
     }
     var note by remember { mutableStateOf("") }
-    val resolvedIcon = remember(selectedIconName) {
-        GoogleIconRegistry.resolveIcon(selectedIconName)
-    }
 
     val colorChoices = remember(selectedColorArgb) {
         (MarkerCategory.entries.map { it.defaultColorArgb } + selectedColorArgb).distinct()
@@ -1010,9 +1040,10 @@ private fun DropMarkerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = ExpressiveTheme.colors.cardSurface,
+        containerColor = ExpressiveTheme.colors.dialogSurface,
         shape = RoundedCornerShape(20.dp),
         title = {
+            ApplyDialogBlurIfEnabled()
             Text("Drop Custom Marker", style = MaterialTheme.typography.headlineMedium)
         },
         text = {
@@ -1023,7 +1054,7 @@ private fun DropMarkerDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Text("Category", style = MaterialTheme.typography.labelLarge)
+                Text("Quick Markers", style = MaterialTheme.typography.labelLarge)
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     MarkerCategory.entries.chunked(3).forEach { rowItems ->
@@ -1098,21 +1129,12 @@ private fun DropMarkerDialog(
                             modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(selectedColorArgb),
-                                border = BorderStroke(2.dp, Color.White),
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = resolvedIcon,
-                                        contentDescription = selectedIconName,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
+                            MarkerStylePreviewBadge(
+                                iconName = selectedIconName,
+                                colorArgb = selectedColorArgb,
+                                markerStyle = markerStyle,
+                                badgeSize = 40.dp
+                            )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
@@ -1248,6 +1270,7 @@ private fun DropMarkerDialog(
 private fun MarkerDetailDialog(
     marker: MapMarkerEntity,
     telemetry: LocationTelemetry,
+    markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON,
     onUpdateIcon: (String) -> Unit,
     onUpdateColor: (Long) -> Unit,
     onDelete: () -> Unit,
@@ -1256,9 +1279,6 @@ private fun MarkerDetailDialog(
     val category = MarkerCategory.entries.firstOrNull { it.name == marker.categoryName }
         ?: MarkerCategory.LANDMARK
     val effectiveIconName = marker.iconName.ifBlank { category.defaultIconName }
-    val resolvedIcon = remember(effectiveIconName) {
-        GoogleIconRegistry.resolveIcon(effectiveIconName)
-    }
     var showIconLibrary by remember { mutableStateOf(false) }
     var showColorPicker by remember { mutableStateOf(false) }
     val colorHex = remember(marker.colorArgb) {
@@ -1277,25 +1297,17 @@ private fun MarkerDetailDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = ExpressiveTheme.colors.cardSurface,
+        containerColor = ExpressiveTheme.colors.dialogSurface,
         shape = RoundedCornerShape(20.dp),
         title = {
+            ApplyDialogBlurIfEnabled()
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(marker.colorArgb),
-                    border = BorderStroke(2.dp, Color.White),
-                    modifier = Modifier.size(42.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = resolvedIcon,
-                            contentDescription = effectiveIconName,
-                            tint = Color.White,
-                            modifier = Modifier.size(21.dp)
-                        )
-                    }
-                }
+                MarkerStylePreviewBadge(
+                    iconName = effectiveIconName,
+                    colorArgb = marker.colorArgb,
+                    markerStyle = markerStyle,
+                    badgeSize = 42.dp
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(marker.title, style = MaterialTheme.typography.titleLarge)

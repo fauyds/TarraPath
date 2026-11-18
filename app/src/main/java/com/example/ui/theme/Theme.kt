@@ -25,6 +25,7 @@ fun TerraPathTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     customAccentColorArgb: Long? = null,
+    uiBlurEnabled: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val baseColorScheme = when {
@@ -37,7 +38,27 @@ fun TerraPathTheme(
     }
 
     val appBackground = if (darkTheme) DarkAppBackground else LightAppBackground
-    val cardSurface = if (darkTheme) DarkCardSurface else LightCardSurface
+    val baseCardSurface = if (darkTheme) DarkCardSurface else LightCardSurface
+    val cardSurface = if (uiBlurEnabled) {
+        baseCardSurface.copy(alpha = if (darkTheme) 0.72f else 0.78f)
+    } else {
+        baseCardSurface
+    }
+    val nestedSurface = if (uiBlurEnabled) {
+        appBackground.copy(alpha = if (darkTheme) 0.68f else 0.74f)
+    } else {
+        appBackground
+    }
+    val dialogSurface = if (uiBlurEnabled) {
+        baseCardSurface.copy(alpha = if (darkTheme) 0.88f else 0.92f)
+    } else {
+        baseCardSurface
+    }
+    val frostedBorder = if (uiBlurEnabled) {
+        if (darkTheme) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.65f)
+    } else {
+        Color.Transparent
+    }
 
     val accentedScheme = if (customAccentColorArgb != null) {
         val rawAccent = Color(customAccentColorArgb.toInt()).copy(alpha = 1f)
@@ -64,23 +85,26 @@ fun TerraPathTheme(
             tertiaryContainer = container,
             onTertiaryContainer = onContainer,
             background = appBackground,
-            surface = cardSurface
+            surface = baseCardSurface
         )
     } else {
         baseColorScheme.copy(
             background = appBackground,
-            surface = cardSurface
+            surface = baseCardSurface
         )
     }
 
     val expressiveColors = ExpressiveColors(
         appBackground = appBackground,
         cardSurface = cardSurface,
-        nestedElementSurface = appBackground,
+        nestedElementSurface = nestedSurface,
         buttonPrimary = accentedScheme.primary,
         buttonTertiarySubtle = accentedScheme.tertiaryContainer.copy(alpha = 0.85f),
         selectorSelected = accentedScheme.primary,
-        selectorUnselected = cardSurface
+        selectorUnselected = cardSurface,
+        uiBlurEnabled = uiBlurEnabled,
+        frostedBorderColor = frostedBorder,
+        dialogSurface = dialogSurface
     )
 
     CompositionLocalProvider(LocalExpressiveColors provides expressiveColors) {

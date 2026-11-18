@@ -59,6 +59,7 @@ import com.example.data.local.RoutePointEntity
 import com.example.data.model.LatLonPoint
 import com.example.data.model.MapPalette
 import com.example.domain.GeoGrid
+import com.example.ui.components.AmbientUiBlurBackdrop
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressiveHorizontalSegmentedSelector
 import com.example.ui.components.ExpressivePillButton
@@ -107,6 +108,7 @@ fun RoutesLibraryScreen(
             .background(ExpressiveTheme.colors.appBackground),
         contentAlignment = Alignment.TopCenter
     ) {
+        AmbientUiBlurBackdrop(visible = ExpressiveTheme.colors.uiBlurEnabled)
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)

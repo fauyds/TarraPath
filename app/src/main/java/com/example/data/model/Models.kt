@@ -227,6 +227,33 @@ object AchievementCatalog {
             targetValue = 100.0,
             unit = "chunks",
             icon = Icons.Filled.Speed
+        ),
+        AchievementDefinition(
+            id = "chunk_250",
+            title = "Territory Pioneer",
+            description = "Unlock 250 map sectors and push back the fog",
+            category = AchievementCategory.EXPLORER,
+            targetValue = 250.0,
+            unit = "chunks",
+            icon = Icons.Filled.Landscape
+        ),
+        AchievementDefinition(
+            id = "chunk_500",
+            title = "Regional Pathfinder",
+            description = "Reveal 500 sectors across your exploring adventures",
+            category = AchievementCategory.EXPLORER,
+            targetValue = 500.0,
+            unit = "chunks",
+            icon = Icons.Filled.Explore
+        ),
+        AchievementDefinition(
+            id = "chunk_1000",
+            title = "Grand World Explorer",
+            description = "Unlock 1,000 total fog-of-war sectors as a master explorer",
+            category = AchievementCategory.EXPLORER,
+            targetValue = 1000.0,
+            unit = "chunks",
+            icon = Icons.Filled.MilitaryTech
         )
     )
 }
@@ -334,14 +361,35 @@ data class LocationSearchState(
     val hasSearched: Boolean = false
 )
 
+enum class MarkerStyle(
+    val label: String,
+    val subtitle: String
+) {
+    ICON_ONLY(
+        label = "Icon Only",
+        subtitle = "Colored icon floating directly on the map"
+    ),
+    ICON_OUTLINE(
+        label = "Icon with Outline",
+        subtitle = "Colored icon with an adaptive contrast outline"
+    ),
+    CIRCLE_ICON(
+        label = "Icon in Circle",
+        subtitle = "Colored circle with an adaptive outline and centered icon"
+    )
+}
+
 data class MapDisplaySettings(
     val easyModeEnabled: Boolean = false,
     val showGridLines: Boolean = true,
     val showStreetNames: Boolean = true,
     val showMarkerLabels: Boolean = true,
+    val disableCreatedMarkerLabels: Boolean = false,
     val showSearchLabels: Boolean = true,
     val showSectorLabels: Boolean = false,
-    val smoothFadeEnabled: Boolean = true
+    val smoothFadeEnabled: Boolean = true,
+    val uiBlurEnabled: Boolean = false,
+    val markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON
 )
 
 enum class ApiProvider(

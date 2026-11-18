@@ -78,9 +78,10 @@ fun GoogleIconLibraryDialog(
         modifier = Modifier
             .fillMaxWidth(0.94f)
             .padding(vertical = 24.dp),
-        containerColor = ExpressiveTheme.colors.cardSurface,
+        containerColor = ExpressiveTheme.colors.dialogSurface,
         shape = RoundedCornerShape(24.dp),
         title = {
+            ApplyDialogBlurIfEnabled()
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,

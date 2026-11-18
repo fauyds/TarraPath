@@ -98,6 +98,25 @@ object ColorPickerMath {
     fun contrastTextColor(background: Color): Color {
         return if (background.luminance() > 0.45f) Color(0xFF14171A) else Color.White
     }
+
+    fun adaptiveOutlineColor(fillColor: Color): Color {
+        val lum = fillColor.luminance()
+        return if (lum > 0.42f) {
+            lerpColor(fillColor, Color(0xFF0E1116), 0.80f)
+        } else {
+            lerpColor(fillColor, Color.White, 0.88f)
+        }
+    }
+
+    private fun lerpColor(start: Color, stop: Color, fraction: Float): Color {
+        val t = fraction.coerceIn(0f, 1f)
+        return Color(
+            red = start.red + (stop.red - start.red) * t,
+            green = start.green + (stop.green - start.green) * t,
+            blue = start.blue + (stop.blue - start.blue) * t,
+            alpha = 1f
+        )
+    }
 }
 
 private val QUICK_SWATCH_COLORS = listOf(
@@ -147,9 +166,10 @@ fun CustomColorPickerDialog(
         modifier = Modifier
             .fillMaxWidth(0.92f)
             .padding(vertical = 20.dp),
-        containerColor = ExpressiveTheme.colors.cardSurface,
+        containerColor = ExpressiveTheme.colors.dialogSurface,
         shape = RoundedCornerShape(24.dp),
         title = {
+            ApplyDialogBlurIfEnabled()
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,

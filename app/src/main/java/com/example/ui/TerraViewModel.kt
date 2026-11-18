@@ -20,6 +20,7 @@ import com.example.data.model.LocationSearchState
 import com.example.data.model.LocationTelemetry
 import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MarkerCategory
+import com.example.data.model.MarkerStyle
 import com.example.data.model.SearchPlaceResult
 import com.example.data.model.ThemeMode
 import com.example.data.preferences.UserPreferencesRepository
@@ -514,7 +515,16 @@ class TerraViewModel(
     }
 
     fun setShowMarkerLabels(show: Boolean) {
-        viewModelScope.launch { preferences.setShowMarkerLabels(show) }
+        viewModelScope.launch {
+            preferences.setShowMarkerLabels(show)
+            if (show) {
+                preferences.setDisableCreatedMarkerLabels(false)
+            }
+        }
+    }
+
+    fun setDisableCreatedMarkerLabels(disabled: Boolean) {
+        viewModelScope.launch { preferences.setDisableCreatedMarkerLabels(disabled) }
     }
 
     fun setShowSearchLabels(show: Boolean) {
@@ -527,6 +537,14 @@ class TerraViewModel(
 
     fun setSmoothFadeEnabled(enabled: Boolean) {
         viewModelScope.launch { preferences.setSmoothFadeEnabled(enabled) }
+    }
+
+    fun setUiBlurEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferences.setUiBlurEnabled(enabled) }
+    }
+
+    fun setMarkerStyle(style: MarkerStyle) {
+        viewModelScope.launch { preferences.setMarkerStyle(style) }
     }
 
     fun onSearchQueryChanged(query: String, biasLat: Double? = null, biasLon: Double? = null) {
