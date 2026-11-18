@@ -211,4 +211,41 @@ class SettingsAndColorPickerTest {
             LocationSearchService.parseErrorDetailFromBody("""{"error":"Invalid key"}""")
         )
     }
+
+    @Test
+    fun resolveMapTileSpec_usesGeoapifyTilesWhenConfiguredAndKeylessOsmOtherwise() {
+        val sampleIndex = org.osmdroid.util.MapTileIndex.getTileIndex(16, 38012, 23084)
+
+        val geoDark = com.example.ui.map.resolveMapTileSpec(
+            isDarkTheme = true,
+            apiKey = "test-geo-key",
+            apiProvider = ApiProvider.GEOAPIFY
+        )
+        assertTrue(!geoDark.useDarkInvertFilter)
+        assertEquals(
+            "https://maps.geoapify.com/v1/tile/dark-matter/16/38012/23084.png?apiKey=test-geo-key",
+            geoDark.tileSource.getTileURLString(sampleIndex)
+        )
+
+        val geoLight = com.example.ui.map.resolveMapTileSpec(
+            isDarkTheme = false,
+            apiKey = "test-geo-key",
+            apiProvider = ApiProvider.GEOAPIFY
+        )
+        assertTrue(!geoLight.useDarkInvertFilter)
+        assertEquals(
+            "https://maps.geoapify.com/v1/tile/osm-bright/16/38012/23084.png?apiKey=test-geo-key",
+            geoLight.tileSource.getTileURLString(sampleIndex)
+        )
+
+        val fallbackDark = com.example.ui.map.resolveMapTileSpec(
+            isDarkTheme = true,
+            apiKey = "",
+            apiProvider = ApiProvider.CUSTOM_GENERAL
+        )
+        assertTrue(fallbackDark.useDarkInvertFilter)
+        val fallbackUrl = fallbackDark.tileSource.getTileURLString(sampleIndex)
+        assertTrue(fallbackUrl.startsWith("https://tile.openstreetmap.org/"))
+        assertTrue(!fallbackUrl.contains("cartocdn"))
+    }
 }

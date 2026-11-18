@@ -82,6 +82,7 @@ import com.example.data.local.MapMarkerEntity
 import com.example.data.local.RouteEntity
 import com.example.data.local.RoutePointEntity
 import com.example.data.model.ActiveRecordingState
+import com.example.data.model.ApiProvider
 import com.example.data.model.DistrictInfo
 import com.example.data.model.LatLonPoint
 import com.example.data.model.LocationSearchState
@@ -122,6 +123,8 @@ fun ExploreScreen(
     palette: MapPalette,
     isDarkTheme: Boolean,
     mapSettings: MapDisplaySettings,
+    apiKey: String = "",
+    apiProvider: ApiProvider = ApiProvider.CUSTOM_GENERAL,
     telemetry: LocationTelemetry,
     districtInfo: DistrictInfo,
     exploredChunks: List<ExploredChunkEntity>,
@@ -216,6 +219,8 @@ fun ExploreScreen(
             palette = palette,
             isDarkTheme = isDarkTheme,
             mapSettings = mapSettings,
+            apiKey = apiKey,
+            apiProvider = apiProvider,
             centerLat = cameraLat,
             centerLon = cameraLon,
             followUser = followUser,
@@ -672,6 +677,7 @@ fun ExploreScreen(
                 ) {
                     val blurOn = ExpressiveTheme.colors.uiBlurEnabled
                     Surface(
+                        modifier = Modifier.weight(1f, fill = false),
                         shape = RoundedCornerShape(percent = 50),
                         color = ExpressiveTheme.colors.cardSurface,
                         shadowElevation = if (blurOn) 0.dp else 3.dp,
@@ -689,9 +695,13 @@ fun ExploreScreen(
                             },
                             style = TelemetryTextStyle.copy(fontSize = 11.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     ExpressivePillButton(
                         text = "Start Route",

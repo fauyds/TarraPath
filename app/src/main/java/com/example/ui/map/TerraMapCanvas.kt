@@ -1,6 +1,7 @@
 package com.example.ui.map
 
 import android.graphics.Canvas as AndroidCanvas
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path as AndroidPath
 import android.graphics.Point
@@ -44,6 +45,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.data.local.ExploredChunkEntity
 import com.example.data.local.MapMarkerEntity
+import com.example.data.model.ApiProvider
 import com.example.data.model.LatLonPoint
 import com.example.data.model.LocationTelemetry
 import com.example.data.model.MapDisplaySettings
@@ -51,6 +53,7 @@ import com.example.data.model.MapPalette
 import com.example.data.model.MarkerCategory
 import com.example.data.model.MarkerStyle
 import com.example.data.model.SearchPlaceResult
+import com.example.data.remote.LocationSearchService
 import com.example.domain.GeoGrid
 import com.example.ui.components.ColorPickerMath
 import com.example.ui.icons.GoogleIconRegistry
@@ -58,72 +61,103 @@ import kotlinx.coroutines.delay
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
+import java.net.URLEncoder
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
-private val CARTO_VOYAGER = XYTileSource(
-    "CartoVoyager",
+private val OSM_STANDARD_LIGHT = XYTileSource(
+    "OsmStandardLight",
     0,
-    20,
+    19,
     256,
     ".png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/rastertiles/voyager/",
-        "https://b.basemaps.cartocdn.com/rastertiles/voyager/",
-        "https://c.basemaps.cartocdn.com/rastertiles/voyager/"
-    ),
-    "© OpenStreetMap contributors © CARTO"
+    arrayOf("https://tile.openstreetmap.org/"),
+    "© OpenStreetMap contributors"
 )
 
-private val CARTO_VOYAGER_NOLABELS = XYTileSource(
-    "CartoVoyagerNoLabels",
+private val OSM_STANDARD_DARK = XYTileSource(
+    "OsmStandardDark",
     0,
-    20,
+    19,
     256,
     ".png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/",
-        "https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/",
-        "https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/"
-    ),
-    "© OpenStreetMap contributors © CARTO"
+    arrayOf("https://tile.openstreetmap.org/"),
+    "© OpenStreetMap contributors"
 )
 
-private val CARTO_DARK_ALL = XYTileSource(
-    "CartoDarkAll",
-    0,
-    20,
-    256,
-    ".png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/dark_all/",
-        "https://b.basemaps.cartocdn.com/dark_all/",
-        "https://c.basemaps.cartocdn.com/dark_all/"
-    ),
-    "© OpenStreetMap contributors © CARTO"
+private val OSM_DARK_INVERT_FILTER = ColorMatrixColorFilter(
+    floatArrayOf(
+        -0.92f, 0f, 0f, 0f, 240f,
+        0f, -0.92f, 0f, 0f, 240f,
+        0f, 0f, -0.90f, 0f, 245f,
+        0f, 0f, 0f, 1.0f, 0f
+    )
 )
 
-private val CARTO_DARK_NOLABELS = XYTileSource(
-    "CartoDarkNoLabels",
-    0,
-    20,
-    256,
-    ".png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/dark_nolabels/",
-        "https://b.basemaps.cartocdn.com/dark_nolabels/",
-        "https://c.basemaps.cartocdn.com/dark_nolabels/"
-    ),
-    "© OpenStreetMap contributors © CARTO"
+data class ResolvedMapTileSpec(
+    val tileSource: OnlineTileSourceBase,
+    val useDarkInvertFilter: Boolean
 )
+
+fun createGeoapifyTileSource(
+    isDarkTheme: Boolean,
+    apiKey: String
+): OnlineTileSourceBase {
+    val cleanKey = LocationSearchService.sanitizeApiKey(apiKey)
+    val encodedKey = URLEncoder.encode(cleanKey, "UTF-8")
+    val styleId = if (isDarkTheme) "dark-matter" else "osm-bright"
+    val cacheSuffix = (cleanKey.hashCode() and 0x7FFFFFFF).toString(16)
+    val sourceName = if (isDarkTheme) {
+        "GeoapifyDarkMatter_$cacheSuffix"
+    } else {
+        "GeoapifyOsmBright_$cacheSuffix"
+    }
+    return object : OnlineTileSourceBase(
+        sourceName,
+        0,
+        20,
+        256,
+        ".png",
+        arrayOf("https://maps.geoapify.com/v1/tile/$styleId/"),
+        "© OpenStreetMap contributors © Geoapify"
+    ) {
+        override fun getTileURLString(pMapTileIndex: Long): String {
+            val z = MapTileIndex.getZoom(pMapTileIndex)
+            val x = MapTileIndex.getX(pMapTileIndex)
+            val y = MapTileIndex.getY(pMapTileIndex)
+            return "${baseUrl}$z/$x/$y$mImageFilenameEnding?apiKey=$encodedKey"
+        }
+    }
+}
+
+fun resolveMapTileSpec(
+    isDarkTheme: Boolean,
+    apiKey: String,
+    apiProvider: ApiProvider
+): ResolvedMapTileSpec {
+    val cleanKey = LocationSearchService.sanitizeApiKey(apiKey)
+    return if (apiProvider == ApiProvider.GEOAPIFY && cleanKey.isNotEmpty()) {
+        ResolvedMapTileSpec(
+            tileSource = createGeoapifyTileSource(isDarkTheme = isDarkTheme, apiKey = cleanKey),
+            useDarkInvertFilter = false
+        )
+    } else {
+        ResolvedMapTileSpec(
+            tileSource = if (isDarkTheme) OSM_STANDARD_DARK else OSM_STANDARD_LIGHT,
+            useDarkInvertFilter = isDarkTheme
+        )
+    }
+}
 
 class MapControlCommands {
     var zoomInSeq by mutableLongStateOf(0L)
@@ -153,6 +187,8 @@ fun TerraMapCanvas(
     palette: MapPalette,
     isDarkTheme: Boolean,
     mapSettings: MapDisplaySettings,
+    apiKey: String = "",
+    apiProvider: ApiProvider = ApiProvider.CUSTOM_GENERAL,
     centerLat: Double,
     centerLon: Double,
     followUser: Boolean,
@@ -225,18 +261,17 @@ fun TerraMapCanvas(
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var isProgrammaticMove by remember { mutableStateOf(false) }
 
-    val targetTileSource = remember(isDarkTheme, mapSettings.showStreetNames) {
-        when {
-            isDarkTheme && mapSettings.showStreetNames -> CARTO_DARK_ALL
-            isDarkTheme -> CARTO_DARK_NOLABELS
-            mapSettings.showStreetNames -> CARTO_VOYAGER
-            else -> CARTO_VOYAGER_NOLABELS
-        }
+    val tileSpec = remember(isDarkTheme, apiKey, apiProvider) {
+        resolveMapTileSpec(
+            isDarkTheme = isDarkTheme,
+            apiKey = apiKey,
+            apiProvider = apiProvider
+        )
     }
 
     val mapView = remember {
         MapView(context).apply {
-            setTileSource(targetTileSource)
+            setTileSource(tileSpec.tileSource)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             isTilesScaledToDpi = true
@@ -288,12 +323,13 @@ fun TerraMapCanvas(
     }
 
     // Update native light/dark tile source & loading surface colors automatically
-    LaunchedEffect(targetTileSource, isDarkTheme, mapView) {
-        if (mapView.tileProvider.tileSource.name() != targetTileSource.name()) {
-            mapView.setTileSource(targetTileSource)
+    LaunchedEffect(tileSpec.tileSource.name(), tileSpec.useDarkInvertFilter, isDarkTheme, mapView) {
+        if (mapView.tileProvider.tileSource.name() != tileSpec.tileSource.name()) {
+            mapView.tileProvider.clearTileCache()
+            mapView.setTileSource(tileSpec.tileSource)
         }
         mapView.overlayManager.tilesOverlay.apply {
-            setColorFilter(null)
+            setColorFilter(if (tileSpec.useDarkInvertFilter) OSM_DARK_INVERT_FILTER else null)
             loadingBackgroundColor = if (isDarkTheme) 0xFF1A1D21.toInt() else 0xFFF0EDE6.toInt()
             loadingLineColor = if (isDarkTheme) 0xFF2B3036.toInt() else 0xFFD9D4CA.toInt()
         }

@@ -49,7 +49,7 @@ class TerraPathApplication : Application() {
         val osmdroidPrefs = getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE)
         val config = Configuration.getInstance()
         config.load(applicationContext, osmdroidPrefs)
-        config.userAgentValue = packageName
+        config.userAgentValue = "TerraPath/1.0 ($packageName)"
         val baseDir = File(cacheDir, "osmdroid")
         val tileDir = File(baseDir, "tiles")
         baseDir.mkdirs()

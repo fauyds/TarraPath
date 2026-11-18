@@ -291,6 +291,8 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 palette = activeMapPalette,
                                 isDarkTheme = isDarkTheme,
                                 mapSettings = mapSettings,
+                                apiKey = apiKey,
+                                apiProvider = apiProvider,
                                 telemetry = telemetry,
                                 districtInfo = districtInfo,
                                 exploredChunks = exploredChunks,

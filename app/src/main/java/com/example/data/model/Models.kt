@@ -412,7 +412,7 @@ enum class ApiProvider(
     ),
     GEOAPIFY(
         label = "Geoapify",
-        subtitle = "Use your Geoapify API key for fast place autocomplete (OSM fallback)",
+        subtitle = "Use your Geoapify API key for map tiles & fast place search (OSM fallback)",
         keyPlaceholder = "Geoapify API key…"
     ),
     LOCATION_IQ(

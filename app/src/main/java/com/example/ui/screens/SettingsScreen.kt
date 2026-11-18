@@ -700,7 +700,7 @@ private fun ApiKeySettingsDialog(
                         val selected = selectedProvider == provider
                         Surface(
                             modifier = Modifier
-                                .weight(1f)
+                                .weight(provider.label.length.toFloat() + 4f)
                                 .defaultMinSize(minHeight = 48.dp)
                                 .clip(RoundedCornerShape(percent = 50))
                                 .clickable {
@@ -721,7 +721,7 @@ private fun ApiKeySettingsDialog(
                             ) {
                                 Text(
                                     text = provider.label,
-                                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp),
                                     color = if (selected) {
                                         MaterialTheme.colorScheme.onPrimary
                                     } else {
@@ -851,7 +851,7 @@ private fun ApiKeySettingsDialog(
                 }
 
                 Text(
-                    text = "Stored locally on-device. Map tiles use OpenStreetMap/CARTO without a key; Geoapify/LocationIQ keys authenticate place search.",
+                    text = "Stored locally on-device. Geoapify keys power map tiles and place search; without one, standard OpenStreetMap tiles are used.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
