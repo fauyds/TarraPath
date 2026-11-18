@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">TerraPath</string>
+    <string name="nav_explore">Explore</string>
+    <string name="nav_routes">Routes</string>
+    <string name="nav_achievements">Trophies</string>
+    <string name="nav_settings">Settings</string>
+    <string name="location_permission_title">Enable Live GPS Tracking</string>
+    <string name="location_permission_rationale">TerraPath uses real-time GPS to reveal fog-of-war sectors, time your routes, and record speed milestones.</string>
+    <string name="grant_location_access">Enable GPS</string>
+    <string name="search_places_hint">Search places, streets, or pins…</string>
+    <string name="search_empty_results">No matching places found</string>
+    <string name="search_error_retry">Could not reach OpenStreetMap search. Check connection and try again.</string>
+</resources>

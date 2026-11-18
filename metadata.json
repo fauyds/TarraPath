@@ -1,0 +1,6 @@
+{
+  "name": "TerraPath",
+  "description": "GPS Fog-of-War map explorer, route timer, custom map palette studio, and achievement tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
