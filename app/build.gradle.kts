@@ -25,7 +25,6 @@ android {
   // Do not remove or modify these signingConfigs. They are necessary for building, installing,
   // and updating Android apps in AI Studio.
   signingConfigs {
-    signingConfigs {
     create("release") {
       storeFile = file("${rootDir}/app/TerraPath-fauyds.jks")
       storePassword = "WXQLTAZXC1"
