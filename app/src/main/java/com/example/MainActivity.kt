@@ -10,10 +10,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -27,6 +30,7 @@ import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -36,6 +40,7 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,8 +48,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -63,6 +72,9 @@ import com.example.data.model.ThemeMode
 import com.example.domain.GeoGrid
 import com.example.ui.TerraViewModel
 import com.example.ui.components.AchievementUnlockedBanner
+import com.example.ui.components.LocalBackdropHazeState
+import com.example.ui.components.LocalBottomOverlayPadding
+import com.example.ui.components.applyBackdropBlur
 import com.example.ui.screens.AchievementsScreen
 import com.example.ui.screens.ExploreScreen
 import com.example.ui.screens.RouteDetailScreen
@@ -70,6 +82,7 @@ import com.example.ui.screens.RoutesLibraryScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.ExpressiveTheme
 import com.example.ui.theme.TerraPathTheme
+import dev.chrisbanes.haze.HazeState
 
 const val ROUTE_EXPLORE = "explore"
 const val ROUTE_ROUTES = "routes"
@@ -221,71 +234,57 @@ fun TerraPathApp(appContainer: AppContainer) {
             }
         }
 
+        val appHazeState = remember(mapSettings.uiBlurEnabled) {
+            if (mapSettings.uiBlurEnabled) HazeState() else null
+        }
+        val density = LocalDensity.current
+        var measuredBottomBarHeightDp by remember { mutableStateOf(0.dp) }
+
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val useNavRail = maxWidth >= 600.dp
+            val effectiveBottomPadding = if (!useNavRail && showBottomNav) measuredBottomBarHeightDp else 0.dp
 
-            Scaffold(
-                containerColor = ExpressiveTheme.colors.appBackground,
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = {
-                    if (!useNavRail && showBottomNav) {
-                        NavigationBar(
-                            containerColor = ExpressiveTheme.colors.cardSurface,
-                            tonalElevation = 0.dp,
-                            windowInsets = WindowInsets.navigationBars
-                        ) {
-                            PrimaryTabs.forEach { tab ->
-                                val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
-                                val label = stringResource(tab.labelRes)
-                                NavigationBarItem(
-                                    selected = selected,
-                                    onClick = { navigateToTab(tab.route) },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = label
-                                        )
-                                    },
-                                    label = { Text(label) },
-                                    modifier = Modifier.testTag("nav_${tab.route}")
-                                )
-                            }
-                        }
-                    }
-                }
-            ) { innerPadding ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    if (useNavRail && showBottomNav) {
-                        NavigationRail(
-                            containerColor = ExpressiveTheme.colors.cardSurface
-                        ) {
-                            PrimaryTabs.forEach { tab ->
-                                val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
-                                val label = stringResource(tab.labelRes)
-                                NavigationRailItem(
-                                    selected = selected,
-                                    onClick = { navigateToTab(tab.route) },
-                                    icon = {
-                                        Icon(
-                                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                            contentDescription = label
-                                        )
-                                    },
-                                    label = { Text(label) }
-                                )
-                            }
-                        }
-                    }
-
-                    NavHost(
-                        navController = navController,
-                        startDestination = ROUTE_EXPLORE,
-                        modifier = Modifier.weight(1f).fillMaxSize()
+            CompositionLocalProvider(
+                LocalBackdropHazeState provides appHazeState,
+                LocalBottomOverlayPadding provides effectiveBottomPadding
+            ) {
+                Scaffold(
+                    containerColor = ExpressiveTheme.colors.appBackground,
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0)
+                ) { innerPadding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
                     ) {
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            if (useNavRail && showBottomNav) {
+                                NavigationRail(
+                                    containerColor = ExpressiveTheme.colors.cardSurface
+                                ) {
+                                    PrimaryTabs.forEach { tab ->
+                                        val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                                        val label = stringResource(tab.labelRes)
+                                        NavigationRailItem(
+                                            selected = selected,
+                                            onClick = { navigateToTab(tab.route) },
+                                            icon = {
+                                                Icon(
+                                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                                    contentDescription = label
+                                                )
+                                            },
+                                            label = { Text(label) }
+                                        )
+                                    }
+                                }
+                            }
+
+                            NavHost(
+                                navController = navController,
+                                startDestination = ROUTE_EXPLORE,
+                                modifier = Modifier.weight(1f).fillMaxSize()
+                            ) {
                         composable(ROUTE_EXPLORE) {
                             ExploreScreen(
                                 palette = activeMapPalette,
@@ -424,6 +423,58 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onToggleUiBlur = { viewModel.setUiBlurEnabled(it) },
                                 onSelectMarkerStyle = { viewModel.setMarkerStyle(it) }
                             )
+                        }
+                    }
+                }
+
+                        if (!useNavRail && showBottomNav) {
+                            val blurOn = mapSettings.uiBlurEnabled && appHazeState != null
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .onSizeChanged { size ->
+                                        measuredBottomBarHeightDp = with(density) { size.height.toDp() }
+                                    }
+                                    .applyBackdropBlur(
+                                        shape = RectangleShape,
+                                        tintColor = ExpressiveTheme.colors.cardSurface,
+                                        blurRadius = 22.dp
+                                    )
+                            ) {
+                                if (mapSettings.uiBlurEnabled) {
+                                    HorizontalDivider(
+                                        thickness = 0.8.dp,
+                                        color = ExpressiveTheme.colors.frostedBorderColor
+                                    )
+                                }
+                                NavigationBar(
+                                    containerColor = if (blurOn) {
+                                        Color.Transparent
+                                    } else {
+                                        ExpressiveTheme.colors.cardSurface
+                                    },
+                                    tonalElevation = 0.dp,
+                                    windowInsets = WindowInsets.navigationBars
+                                ) {
+                                    PrimaryTabs.forEach { tab ->
+                                        val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                                        val label = stringResource(tab.labelRes)
+                                        NavigationBarItem(
+                                            selected = selected,
+                                            onClick = { navigateToTab(tab.route) },
+                                            icon = {
+                                                Icon(
+                                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                                    contentDescription = label
+                                                )
+                                            },
+                                            label = { Text(label) },
+                                            modifier = Modifier.testTag("nav_${tab.route}")
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

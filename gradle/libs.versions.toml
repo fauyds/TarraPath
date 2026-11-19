@@ -41,6 +41,7 @@ googleServices = "4.5.0"
 credentials = "1.5.0"
 googleid = "1.1.1"
 osmdroid = "6.1.20"
+haze = "1.3.1"
 
 
 [libraries]
@@ -96,6 +97,7 @@ androidx-credentials = { group = "androidx.credentials", name = "credentials", v
 androidx-credentials-play-services = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
+dev-chrisbanes-haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
 
 
 [plugins]

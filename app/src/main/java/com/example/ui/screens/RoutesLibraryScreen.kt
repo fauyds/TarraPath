@@ -59,14 +59,16 @@ import com.example.data.local.RoutePointEntity
 import com.example.data.model.LatLonPoint
 import com.example.data.model.MapPalette
 import com.example.domain.GeoGrid
-import com.example.ui.components.AmbientUiBlurBackdrop
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressiveHorizontalSegmentedSelector
 import com.example.ui.components.ExpressivePillButton
+import com.example.ui.components.LocalBackdropHazeState
+import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.groupedCardShape
 import com.example.ui.map.MiniMapPalettePreview
 import com.example.ui.theme.ExpressiveTheme
 import com.example.ui.theme.TelemetryTextStyle
+import dev.chrisbanes.haze.hazeSource
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -102,19 +104,33 @@ fun RoutesLibraryScreen(
     val totalDuration = remember(routes) { routes.sumOf { it.durationMillis } }
     val fastestAvgSpeed = remember(routes) { routes.maxOfOrNull { it.avgSpeedKmh } ?: 0f }
 
+    val hazeState = LocalBackdropHazeState.current
+    val bottomOverlayPadding = LocalBottomOverlayPadding.current
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(ExpressiveTheme.colors.appBackground),
         contentAlignment = Alignment.TopCenter
     ) {
-        AmbientUiBlurBackdrop(visible = ExpressiveTheme.colors.uiBlurEnabled)
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxSize()
+                .then(
+                    if (ExpressiveTheme.colors.uiBlurEnabled && hazeState != null) {
+                        Modifier.hazeSource(state = hazeState)
+                    } else {
+                        Modifier
+                    }
+                )
                 .windowInsetsPadding(WindowInsets.statusBars),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp + bottomOverlayPadding
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {

@@ -59,12 +59,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
@@ -72,8 +71,15 @@ import com.example.data.model.AchievementDefinition
 import com.example.data.model.MarkerStyle
 import com.example.ui.icons.GoogleIconRegistry
 import com.example.ui.theme.ExpressiveTheme
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+
+val LocalBackdropHazeState = compositionLocalOf<HazeState?> { null }
+val LocalBottomOverlayPadding = compositionLocalOf { 0.dp }
 
 /**
  * Grouped list card geometry:
@@ -100,6 +106,35 @@ fun groupedCardShape(index: Int, count: Int): RoundedCornerShape {
 }
 
 @Composable
+fun isBackdropBlurActive(): Boolean {
+    return ExpressiveTheme.colors.uiBlurEnabled && LocalBackdropHazeState.current != null
+}
+
+@Composable
+fun Modifier.applyBackdropBlur(
+    shape: Shape,
+    tintColor: Color,
+    blurRadius: Dp = 20.dp
+): Modifier {
+    val hazeState = LocalBackdropHazeState.current
+    return if (ExpressiveTheme.colors.uiBlurEnabled && hazeState != null) {
+        this
+            .clip(shape)
+            .hazeEffect(
+                state = hazeState,
+                style = HazeStyle(
+                    backgroundColor = tintColor.copy(alpha = 0.25f),
+                    tint = HazeTint(tintColor),
+                    blurRadius = blurRadius,
+                    noiseFactor = 0.04f
+                )
+            )
+    } else {
+        this
+    }
+}
+
+@Composable
 fun ExpressiveCard(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(16.dp),
@@ -110,6 +145,7 @@ fun ExpressiveCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+    val backdropActive = isBackdropBlurActive()
     val resolvedBorder = border ?: if (blurOn) {
         BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
     } else {
@@ -118,11 +154,13 @@ fun ExpressiveCard(
     val resolvedElevation = if (blurOn) 0.dp else shadowElevation
 
     Surface(
-        modifier = modifier.then(
-            if (onClick != null) Modifier.clip(shape).clickable(onClick = onClick) else Modifier
-        ),
+        modifier = modifier
+            .applyBackdropBlur(shape = shape, tintColor = containerColor)
+            .then(
+                if (onClick != null) Modifier.clip(shape).clickable(onClick = onClick) else Modifier
+            ),
         shape = shape,
-        color = containerColor,
+        color = if (backdropActive) Color.Transparent else containerColor,
         shadowElevation = resolvedElevation,
         border = resolvedBorder
     ) {
@@ -575,54 +613,7 @@ fun Modifier.conditionalBlur(enabled: Boolean, radius: Dp = 12.dp): Modifier {
 }
 
 @Composable
-fun AmbientUiBlurBackdrop(
-    visible: Boolean,
-    modifier: Modifier = Modifier
-) {
-    if (!visible) return
-    val primaryGlow = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
-    val tertiaryGlow = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.20f)
-    val secondaryGlow = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f)
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .conditionalBlur(enabled = true, radius = 56.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(260.dp)
-                .offset(x = (-40).dp, y = (-30).dp)
-                .background(
-                    brush = Brush.radialGradient(listOf(primaryGlow, Color.Transparent)),
-                    shape = CircleShape
-                )
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .size(240.dp)
-                .offset(x = 60.dp, y = (-40).dp)
-                .background(
-                    brush = Brush.radialGradient(listOf(tertiaryGlow, Color.Transparent)),
-                    shape = CircleShape
-                )
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .size(280.dp)
-                .offset(x = (-30).dp, y = 40.dp)
-                .background(
-                    brush = Brush.radialGradient(listOf(secondaryGlow, Color.Transparent)),
-                    shape = CircleShape
-                )
-        )
-    }
-}
-
-@Composable
-fun ApplyDialogBlurIfEnabled(blurRadiusPx: Int = 36) {
+fun ApplyDialogBlurIfEnabled(blurRadiusPx: Int = 40) {
     val uiBlurEnabled = ExpressiveTheme.colors.uiBlurEnabled
     if (!uiBlurEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
     val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window ?: return
@@ -632,13 +623,11 @@ fun ApplyDialogBlurIfEnabled(blurRadiusPx: Int = 36) {
         val params = dialogWindow.attributes
         params.blurBehindRadius = blurRadiusPx
         dialogWindow.attributes = params
-        dialogWindow.setBackgroundBlurRadius(blurRadiusPx)
         onDispose {
             dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
             val resetParams = dialogWindow.attributes
             resetParams.blurBehindRadius = 0
             dialogWindow.attributes = resetParams
-            dialogWindow.setBackgroundBlurRadius(0)
         }
     }
 }

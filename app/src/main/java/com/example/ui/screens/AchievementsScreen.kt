@@ -54,12 +54,14 @@ import com.example.data.local.ExplorerStatsEntity
 import com.example.data.model.AchievementCategory
 import com.example.data.model.AchievementUiItem
 import com.example.domain.GeoGrid
-import com.example.ui.components.AmbientUiBlurBackdrop
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressiveHorizontalSegmentedSelector
+import com.example.ui.components.LocalBackdropHazeState
+import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.groupedCardShape
 import com.example.ui.theme.ExpressiveTheme
 import com.example.ui.theme.TelemetryTextStyle
+import dev.chrisbanes.haze.hazeSource
 import kotlin.math.roundToInt
 
 enum class AchievementFilter(val label: String) {
@@ -91,19 +93,33 @@ fun AchievementsScreen(
 
     val unlockedCount = remember(achievements) { achievements.count { it.isUnlocked } }
 
+    val hazeState = LocalBackdropHazeState.current
+    val bottomOverlayPadding = LocalBottomOverlayPadding.current
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(ExpressiveTheme.colors.appBackground),
         contentAlignment = Alignment.TopCenter
     ) {
-        AmbientUiBlurBackdrop(visible = ExpressiveTheme.colors.uiBlurEnabled)
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxSize()
+                .then(
+                    if (ExpressiveTheme.colors.uiBlurEnabled && hazeState != null) {
+                        Modifier.hazeSource(state = hazeState)
+                    } else {
+                        Modifier
+                    }
+                )
                 .windowInsetsPadding(WindowInsets.statusBars),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp + bottomOverlayPadding
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {

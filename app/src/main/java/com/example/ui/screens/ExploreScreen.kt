@@ -100,14 +100,19 @@ import com.example.ui.components.CustomColorPickerDialog
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressivePillButton
 import com.example.ui.components.GoogleIconLibraryDialog
+import com.example.ui.components.LocalBackdropHazeState
+import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.LocationSearchBarAndResults
 import com.example.ui.components.MarkerStylePreviewBadge
 import com.example.ui.components.SelectedSearchPlaceBanner
+import com.example.ui.components.applyBackdropBlur
 import com.example.ui.components.conditionalBlur
+import com.example.ui.components.isBackdropBlurActive
 import com.example.ui.map.MapControlCommands
 import com.example.ui.map.TerraMapCanvas
 import com.example.ui.theme.ExpressiveTheme
 import com.example.ui.theme.TelemetryTextStyle
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -209,9 +214,11 @@ fun ExploreScreen(
         highlightedRoutePoints.map { LatLonPoint(it.latitude, it.longitude, it.speedKmh, it.timestamp) }
     }
 
-    val blurMapBehindOverlay = mapSettings.uiBlurEnabled && (
-        isSearchExpanded || pendingRouteSummary != null || dropMarkerDraft != null || selectedMarker != null
+    val blurMapBehindDialog = mapSettings.uiBlurEnabled && (
+        pendingRouteSummary != null || dropMarkerDraft != null || selectedMarker != null
     )
+    val hazeState = LocalBackdropHazeState.current
+    val bottomOverlayPadding = LocalBottomOverlayPadding.current
 
     Box(modifier = modifier.fillMaxSize()) {
         // Full-bleed OSMDroid Map with Fog-of-War, Routes, Markers & Live GPS
@@ -251,7 +258,15 @@ fun ExploreScreen(
                     selectedMarker = marker
                 }
             },
-            modifier = Modifier.conditionalBlur(enabled = blurMapBehindOverlay, radius = 12.dp)
+            modifier = Modifier
+                .then(
+                    if (mapSettings.uiBlurEnabled && hazeState != null) {
+                        Modifier.hazeSource(state = hazeState)
+                    } else {
+                        Modifier
+                    }
+                )
+                .conditionalBlur(enabled = blurMapBehindDialog, radius = 12.dp)
         )
 
         // Top HUD: Location Search Bar + District exploration stats + Marker category filter
@@ -564,10 +579,9 @@ fun ExploreScreen(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .conditionalBlur(enabled = mapSettings.uiBlurEnabled && isSearchExpanded, radius = 10.dp)
                 .padding(
                     end = 16.dp,
-                    bottom = if (selectedSearchPlace != null && !isSearchExpanded) 186.dp else 104.dp
+                    bottom = bottomOverlayPadding + if (selectedSearchPlace != null && !isSearchExpanded) 186.dp else 104.dp
                 ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -643,7 +657,12 @@ fun ExploreScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 14.dp,
+                    bottom = 14.dp + bottomOverlayPadding
+                ),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -676,10 +695,17 @@ fun ExploreScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+                    val backdropActive = isBackdropBlurActive()
+                    val coordPillShape = RoundedCornerShape(percent = 50)
                     Surface(
-                        modifier = Modifier.weight(1f, fill = false),
-                        shape = RoundedCornerShape(percent = 50),
-                        color = ExpressiveTheme.colors.cardSurface,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .applyBackdropBlur(
+                                shape = coordPillShape,
+                                tintColor = ExpressiveTheme.colors.cardSurface
+                            ),
+                        shape = coordPillShape,
+                        color = if (backdropActive) Color.Transparent else ExpressiveTheme.colors.cardSurface,
                         shadowElevation = if (blurOn) 0.dp else 3.dp,
                         border = if (blurOn) {
                             BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
@@ -780,14 +806,16 @@ private fun MapControlCircleButton(
     testTag: String = ""
 ) {
     val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+    val backdropActive = isBackdropBlurActive()
     Surface(
         modifier = Modifier
             .size(48.dp)
+            .applyBackdropBlur(shape = CircleShape, tintColor = containerColor, blurRadius = 18.dp)
             .clip(CircleShape)
             .clickable(onClick = onClick)
             .then(if (testTag.isNotEmpty()) Modifier.testTag(testTag) else Modifier),
         shape = CircleShape,
-        color = containerColor,
+        color = if (backdropActive) Color.Transparent else containerColor,
         shadowElevation = if (blurOn) 0.dp else 4.dp,
         border = if (blurOn) {
             BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)

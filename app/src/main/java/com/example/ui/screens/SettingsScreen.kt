@@ -77,7 +77,6 @@ import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MapPalette
 import com.example.data.model.MarkerStyle
 import com.example.data.model.ThemeMode
-import com.example.ui.components.AmbientUiBlurBackdrop
 import com.example.ui.components.ApplyDialogBlurIfEnabled
 import com.example.ui.components.ColorPickerMath
 import com.example.ui.components.CustomColorPickerDialog
@@ -85,12 +84,15 @@ import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressiveHorizontalSegmentedSelector
 import com.example.ui.components.ExpressivePillButton
 import com.example.ui.components.GoogleIconLibraryDialog
+import com.example.ui.components.LocalBackdropHazeState
+import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.MarkerStylePreviewBadge
 import com.example.ui.components.conditionalBlur
 import com.example.ui.components.groupedCardShape
 import com.example.ui.icons.GoogleIconRegistry
 import com.example.ui.map.MiniMapPalettePreview
 import com.example.ui.theme.ExpressiveTheme
+import dev.chrisbanes.haze.hazeSource
 
 @Composable
 fun SettingsScreen(
@@ -134,6 +136,8 @@ fun SettingsScreen(
     }
 
     val anyDialogOpen = showIconBrowser || showThemeColorPicker || showApiKeyDialog
+    val hazeState = LocalBackdropHazeState.current
+    val bottomOverlayPadding = LocalBottomOverlayPadding.current
 
     Box(
         modifier = modifier
@@ -141,15 +145,25 @@ fun SettingsScreen(
             .background(ExpressiveTheme.colors.appBackground),
         contentAlignment = Alignment.TopCenter
     ) {
-        AmbientUiBlurBackdrop(visible = mapSettings.uiBlurEnabled)
-
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxSize()
+                .then(
+                    if (mapSettings.uiBlurEnabled && hazeState != null) {
+                        Modifier.hazeSource(state = hazeState)
+                    } else {
+                        Modifier
+                    }
+                )
                 .conditionalBlur(enabled = mapSettings.uiBlurEnabled && anyDialogOpen, radius = 10.dp)
                 .windowInsetsPadding(WindowInsets.statusBars),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp + bottomOverlayPadding
+            ),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {

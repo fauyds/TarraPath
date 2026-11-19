@@ -248,4 +248,70 @@ class SettingsAndColorPickerTest {
         assertTrue(fallbackUrl.startsWith("https://tile.openstreetmap.org/"))
         assertTrue(!fallbackUrl.contains("cartocdn"))
     }
+
+    @Test
+    fun speedEstimator_filtersIndoorDriftAndTracksRealMovementCleanly() {
+        val base = com.example.data.sensors.SpeedFixSample(
+            latitude = 46.9926,
+            longitude = 28.8307,
+            accuracyMeters = 16f,
+            reportedSpeedMps = 0.65f, // ~2.34 km/h noisy drift while coordinates didn't move
+            speedAccuracyMps = 2.8f,
+            elapsedRealtimeMs = 1_000L
+        )
+        val stationaryNext = com.example.data.sensors.SpeedFixSample(
+            latitude = 46.992602,
+            longitude = 28.830702, // < 0.3m moved
+            accuracyMeters = 16f,
+            reportedSpeedMps = 0.7f, // ~2.5 km/h phantom drift
+            speedAccuracyMps = 3.0f,
+            elapsedRealtimeMs = 2_500L
+        )
+        val driftSpeed = com.example.data.sensors.SpeedEstimator.computeSpeedKmh(
+            current = stationaryNext,
+            previous = base,
+            previousSmoothedKmh = 0f
+        )
+        assertEquals(0f, driftSpeed, 0.001f)
+
+        // Real walking fix with good accuracy and reported speed (1.5 m/s = 5.4 km/h)
+        val walkingFix = com.example.data.sensors.SpeedFixSample(
+            latitude = 46.99266,
+            longitude = 28.83076,
+            accuracyMeters = 6f,
+            reportedSpeedMps = 1.5f,
+            speedAccuracyMps = 0.4f,
+            elapsedRealtimeMs = 4_000L
+        )
+        val walkingSpeed = com.example.data.sensors.SpeedEstimator.computeSpeedKmh(
+            current = walkingFix,
+            previous = stationaryNext,
+            previousSmoothedKmh = 0f
+        )
+        assertTrue(walkingSpeed in 3.0f..5.5f)
+
+        // Fallback calculation when reportedSpeedMps is null (~22m in 4s = ~19.8 km/h)
+        val bikeStart = com.example.data.sensors.SpeedFixSample(
+            latitude = 46.99260,
+            longitude = 28.83070,
+            accuracyMeters = 5f,
+            reportedSpeedMps = null,
+            speedAccuracyMps = null,
+            elapsedRealtimeMs = 10_000L
+        )
+        val bikeEnd = com.example.data.sensors.SpeedFixSample(
+            latitude = 46.99280, // ~22.2m north
+            longitude = 28.83070,
+            accuracyMeters = 5f,
+            reportedSpeedMps = null,
+            speedAccuracyMps = null,
+            elapsedRealtimeMs = 14_000L
+        )
+        val derivedBikeSpeed = com.example.data.sensors.SpeedEstimator.computeSpeedKmh(
+            current = bikeEnd,
+            previous = bikeStart,
+            previousSmoothedKmh = 0f
+        )
+        assertTrue(derivedBikeSpeed in 10f..22f)
+    }
 }
