@@ -129,6 +129,7 @@ class LocationTracker(context: Context) {
 
         var previousSample: SpeedFixSample? = null
         var smoothedSpeedKmh = 0f
+        var lastValidBearingDeg: Float? = null
         var lastFixReceivedRealtimeMs = 0L
         var lastEmittedTelemetry: LocationTelemetry? = null
 
@@ -174,6 +175,33 @@ class LocationTracker(context: Context) {
                     previousSmoothedKmh = smoothedSpeedKmh
                 )
             }
+
+            if (!isStaleCached) {
+                val hardwareBearing = if (location.hasBearing() && !location.bearing.isNaN() && smoothedSpeedKmh >= 2.0f) {
+                    HeadingEstimator.normalizeDegrees(location.bearing)
+                } else {
+                    null
+                }
+                val derivedBearing = if (hardwareBearing == null && prev != null && smoothedSpeedKmh >= 2.0f) {
+                    HeadingEstimator.computeCourseBearingDegrees(
+                        prevLat = prev.latitude,
+                        prevLon = prev.longitude,
+                        curLat = sample.latitude,
+                        curLon = sample.longitude
+                    )
+                } else {
+                    null
+                }
+                val candidateBearing = hardwareBearing ?: derivedBearing
+                if (candidateBearing != null) {
+                    lastValidBearingDeg = HeadingEstimator.smoothAngle(
+                        previousDegrees = lastValidBearingDeg,
+                        newDegrees = candidateBearing,
+                        alpha = 0.45f
+                    )
+                }
+            }
+
             previousSample = sample
             lastFixReceivedRealtimeMs = SystemClock.elapsedRealtime()
 
@@ -183,6 +211,8 @@ class LocationTracker(context: Context) {
                 longitude = location.longitude,
                 speedKmh = smoothedSpeedKmh,
                 accuracyMeters = location.accuracy,
+                bearingDegrees = lastValidBearingDeg,
+                headingDegrees = lastValidBearingDeg,
                 hasFix = true,
                 hasPermission = true,
                 lastUpdatedAt = wallTime

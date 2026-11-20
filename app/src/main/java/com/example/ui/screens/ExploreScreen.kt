@@ -269,7 +269,7 @@ fun ExploreScreen(
                 .conditionalBlur(enabled = blurMapBehindDialog, radius = 12.dp)
         )
 
-        // Top HUD: Location Search Bar + District exploration stats + Marker category filter
+        // Top HUD: Coordinate Bar (top-left) + Location Search Bar + District exploration stats + Marker category filter
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -279,6 +279,24 @@ fun ExploreScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            AnimatedVisibility(
+                visible = !isSearchExpanded,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start
+                ) {
+                    CoordinateStatusBar(
+                        telemetry = telemetry,
+                        mapSettings = mapSettings,
+                        apiProvider = apiProvider,
+                        apiKey = apiKey,
+                        modifier = Modifier.testTag("coordinate_bar")
+                    )
+                }
+            }
+
             LocationSearchBarAndResults(
                 searchState = locationSearchState,
                 isExpanded = isSearchExpanded,
@@ -691,49 +709,9 @@ fun ExploreScreen(
             if (!activeRecording.isRecording) {
                 Row(
                     modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val blurOn = ExpressiveTheme.colors.uiBlurEnabled
-                    val backdropActive = isBackdropBlurActive()
-                    val coordPillShape = RoundedCornerShape(percent = 50)
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .applyBackdropBlur(
-                                shape = coordPillShape,
-                                tintColor = ExpressiveTheme.colors.cardSurface
-                            ),
-                        shape = coordPillShape,
-                        color = if (backdropActive) Color.Transparent else ExpressiveTheme.colors.cardSurface,
-                        shadowElevation = if (blurOn) 0.dp else 3.dp,
-                        border = if (blurOn) {
-                            BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
-                        } else {
-                            null
-                        }
-                    ) {
-                        val attribution = when {
-                            !mapSettings.showStreetNames -> "© OpenFreeMap • © OSM"
-                            apiProvider == ApiProvider.GEOAPIFY && apiKey.isNotBlank() -> "© Geoapify • © OSM"
-                            else -> "© OSM"
-                        }
-                        Text(
-                            text = if (telemetry.hasFix) {
-                                String.format("%.4f, %.4f • %s", telemetry.latitude, telemetry.longitude, attribution)
-                            } else {
-                                attribution
-                            },
-                            style = TelemetryTextStyle.copy(fontSize = 11.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
                     ExpressivePillButton(
                         text = "Start Route",
                         icon = Icons.Filled.PlayArrow,
@@ -1492,6 +1470,52 @@ private fun MarkerDetailDialog(
                 showColorPicker = false
             },
             onDismiss = { showColorPicker = false }
+        )
+    }
+}
+
+@Composable
+private fun CoordinateStatusBar(
+    telemetry: LocationTelemetry,
+    mapSettings: MapDisplaySettings,
+    apiProvider: ApiProvider,
+    apiKey: String,
+    modifier: Modifier = Modifier
+) {
+    val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+    val backdropActive = isBackdropBlurActive()
+    val coordPillShape = RoundedCornerShape(percent = 50)
+    val attribution = when {
+        !mapSettings.showStreetNames -> "© OpenFreeMap • © OSM"
+        apiProvider == ApiProvider.GEOAPIFY && apiKey.isNotBlank() -> "© Geoapify • © OSM"
+        else -> "© OSM"
+    }
+
+    Surface(
+        modifier = modifier.applyBackdropBlur(
+            shape = coordPillShape,
+            tintColor = ExpressiveTheme.colors.cardSurface
+        ),
+        shape = coordPillShape,
+        color = if (backdropActive) Color.Transparent else ExpressiveTheme.colors.cardSurface,
+        shadowElevation = if (blurOn) 0.dp else 3.dp,
+        border = if (blurOn) {
+            BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+        } else {
+            null
+        }
+    ) {
+        Text(
+            text = if (telemetry.hasFix) {
+                String.format("%.4f, %.4f • %s", telemetry.latitude, telemetry.longitude, attribution)
+            } else {
+                attribution
+            },
+            style = TelemetryTextStyle.copy(fontSize = 11.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
         )
     }
 }

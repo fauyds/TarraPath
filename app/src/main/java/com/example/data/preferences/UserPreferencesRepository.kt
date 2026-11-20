@@ -35,6 +35,7 @@ class UserPreferencesRepository(private val context: Context) {
         val SHOW_SMOOTH_FADE = booleanPreferencesKey("show_smooth_fade")
         val DISABLE_CREATED_MARKER_LABELS = booleanPreferencesKey("disable_created_marker_labels")
         val UI_BLUR_ENABLED = booleanPreferencesKey("ui_blur_enabled")
+        val SHOW_LOCATION_OUTLINE = booleanPreferencesKey("show_location_outline")
         val MARKER_STYLE = stringPreferencesKey("marker_style")
     }
 
@@ -65,6 +66,7 @@ class UserPreferencesRepository(private val context: Context) {
             showSectorLabels = prefs[Keys.SHOW_SECTOR_LABELS] ?: false,
             smoothFadeEnabled = prefs[Keys.SHOW_SMOOTH_FADE] ?: true,
             uiBlurEnabled = prefs[Keys.UI_BLUR_ENABLED] ?: false,
+            showLocationOutline = prefs[Keys.SHOW_LOCATION_OUTLINE] ?: true,
             markerStyle = parsedMarkerStyle
         )
     }
@@ -164,6 +166,10 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setUiBlurEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.UI_BLUR_ENABLED] = enabled }
+    }
+
+    suspend fun setShowLocationOutline(show: Boolean) {
+        context.dataStore.edit { it[Keys.SHOW_LOCATION_OUTLINE] = show }
     }
 
     suspend fun setMarkerStyle(style: MarkerStyle) {

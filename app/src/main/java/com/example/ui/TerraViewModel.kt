@@ -28,6 +28,8 @@ import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.remote.ApiKeyRejectedException
 import com.example.data.remote.LocationSearchService
 import com.example.data.repository.TerraRepository
+import com.example.data.sensors.CompassHeadingTracker
+import com.example.data.sensors.HeadingEstimator
 import com.example.data.sensors.LocationTracker
 import com.example.data.sensors.StepSensorEvent
 import com.example.data.sensors.StepSensorTracker
@@ -64,11 +66,15 @@ class TerraViewModel(
     private val preferences: UserPreferencesRepository,
     private val locationTracker: LocationTracker,
     private val stepSensorTracker: StepSensorTracker,
-    private val locationSearchService: LocationSearchService = LocationSearchService()
+    private val locationSearchService: LocationSearchService = LocationSearchService(),
+    private val compassHeadingTracker: CompassHeadingTracker? = null
 ) : ViewModel() {
 
     private val _hasLocationPermission = MutableStateFlow(false)
     private val _hasActivityPermission = MutableStateFlow(false)
+
+    private var latestGpsTelemetry = LocationTelemetry()
+    private var latestCompassHeadingDeg: Float? = null
 
     private val _locationTelemetry = MutableStateFlow(LocationTelemetry())
     val locationTelemetry: StateFlow<LocationTelemetry> = _locationTelemetry.asStateFlow()
@@ -185,6 +191,7 @@ class TerraViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var locationJob: Job? = null
+    private var headingJob: Job? = null
     private var stepJob: Job? = null
     private var timerJob: Job? = null
     private var searchJob: Job? = null
@@ -196,14 +203,27 @@ class TerraViewModel(
         }
     }
 
+    private fun publishMergedTelemetry() {
+        val gps = latestGpsTelemetry
+        val fusedHeading = HeadingEstimator.resolveHeadingDegrees(
+            compassDegrees = latestCompassHeadingDeg,
+            gpsBearingDegrees = gps.bearingDegrees,
+            speedKmh = gps.speedKmh
+        )
+        _locationTelemetry.value = gps.copy(headingDegrees = fusedHeading)
+    }
+
     fun updatePermissions(hasLocation: Boolean, hasActivityRecognition: Boolean) {
         if (hasLocation != _hasLocationPermission.value) {
             _hasLocationPermission.value = hasLocation
-            _locationTelemetry.update { it.copy(hasPermission = hasLocation) }
+            latestGpsTelemetry = latestGpsTelemetry.copy(hasPermission = hasLocation)
+            publishMergedTelemetry()
             if (hasLocation) {
                 startLocationCollection()
+                startHeadingCollection()
             } else {
                 locationJob?.cancel()
+                headingJob?.cancel()
             }
         }
         if (hasActivityRecognition != _hasActivityPermission.value) {
@@ -220,9 +240,23 @@ class TerraViewModel(
         locationJob?.cancel()
         locationJob = viewModelScope.launch {
             locationTracker.observeLocationUpdates(true).collect { telemetry ->
-                _locationTelemetry.value = telemetry
+                latestGpsTelemetry = telemetry
+                publishMergedTelemetry()
                 if (telemetry.hasFix) {
                     processGpsFix(telemetry)
+                }
+            }
+        }
+    }
+
+    private fun startHeadingCollection() {
+        headingJob?.cancel()
+        val tracker = compassHeadingTracker ?: return
+        headingJob = viewModelScope.launch {
+            tracker.observeHeadingDegrees().collect { compassDeg ->
+                latestCompassHeadingDeg = compassDeg
+                if (latestGpsTelemetry.hasFix) {
+                    publishMergedTelemetry()
                 }
             }
         }
@@ -569,6 +603,10 @@ class TerraViewModel(
         viewModelScope.launch { preferences.setUiBlurEnabled(enabled) }
     }
 
+    fun setShowLocationOutline(show: Boolean) {
+        viewModelScope.launch { preferences.setShowLocationOutline(show) }
+    }
+
     fun setMarkerStyle(style: MarkerStyle) {
         viewModelScope.launch { preferences.setMarkerStyle(style) }
     }
@@ -720,7 +758,8 @@ class TerraViewModel(
                 preferences = container.preferences,
                 locationTracker = container.locationTracker,
                 stepSensorTracker = container.stepSensorTracker,
-                locationSearchService = container.locationSearchService
+                locationSearchService = container.locationSearchService,
+                compassHeadingTracker = container.compassHeadingTracker
             ) as T
         }
     }

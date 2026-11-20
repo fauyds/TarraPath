@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Signpost
 import androidx.compose.material.icons.filled.Tag
@@ -119,6 +120,7 @@ fun SettingsScreen(
     onToggleSearchLabels: (Boolean) -> Unit,
     onToggleSectorLabels: (Boolean) -> Unit,
     onToggleUiBlur: (Boolean) -> Unit,
+    onToggleLocationOutline: (Boolean) -> Unit,
     onSelectMarkerStyle: (MarkerStyle) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -357,6 +359,26 @@ fun SettingsScreen(
                             switchTestTag = "grid_lines_switch"
                         )
                     }
+                }
+            }
+
+            // Location Indicator Toggle
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Location Indicator",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SettingToggleCard(
+                        icon = Icons.Filled.MyLocation,
+                        title = "Location Dot & Arrow Outline",
+                        subtitle = "Show the white outline around your GPS dot and direction arrow",
+                        checked = mapSettings.showLocationOutline,
+                        onCheckedChange = onToggleLocationOutline,
+                        shape = RoundedCornerShape(16.dp),
+                        switchTestTag = "location_outline_switch"
+                    )
                 }
             }
 

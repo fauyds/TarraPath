@@ -217,25 +217,31 @@ class SettingsAndColorPickerTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val prefs = UserPreferencesRepository(context)
 
+        assertTrue(prefs.mapDisplaySettings.first().showLocationOutline)
+
         prefs.setShowStreetNames(false)
         prefs.setShowMarkerLabels(false)
         prefs.setShowSearchLabels(false)
         prefs.setShowSectorLabels(true)
+        prefs.setShowLocationOutline(false)
         val labelDisabled = prefs.mapDisplaySettings.first()
         assertTrue(!labelDisabled.showStreetNames)
         assertTrue(!labelDisabled.showMarkerLabels)
         assertTrue(!labelDisabled.showSearchLabels)
         assertTrue(labelDisabled.showSectorLabels)
+        assertTrue(!labelDisabled.showLocationOutline)
 
         prefs.setShowStreetNames(true)
         prefs.setShowMarkerLabels(true)
         prefs.setShowSearchLabels(true)
         prefs.setShowSectorLabels(false)
+        prefs.setShowLocationOutline(true)
         val restored = prefs.mapDisplaySettings.first()
         assertTrue(restored.showStreetNames)
         assertTrue(restored.showMarkerLabels)
         assertTrue(restored.showSearchLabels)
         assertTrue(!restored.showSectorLabels)
+        assertTrue(restored.showLocationOutline)
     }
 
     @Test
@@ -416,5 +422,72 @@ class SettingsAndColorPickerTest {
             previousSmoothedKmh = 0f
         )
         assertTrue(derivedBikeSpeed in 10f..22f)
+    }
+
+    @Test
+    fun headingEstimator_normalizesSmoothsAndFusesCompassAndGpsBearings() {
+        assertEquals(350f, com.example.data.sensors.HeadingEstimator.normalizeDegrees(-10f), 0.01f)
+        assertEquals(15f, com.example.data.sensors.HeadingEstimator.normalizeDegrees(375f), 0.01f)
+
+        // Smoothing across the 359 -> 1 boundary stays near North instead of swinging through 180°
+        val wrappedSmooth = com.example.data.sensors.HeadingEstimator.smoothAngle(
+            previousDegrees = 358f,
+            newDegrees = 2f,
+            alpha = 0.5f
+        )
+        assertEquals(0f, wrappedSmooth, 0.1f)
+
+        // Moving directly East gives ~90° bearing
+        val eastBearing = com.example.data.sensors.HeadingEstimator.computeCourseBearingDegrees(
+            prevLat = 46.9926,
+            prevLon = 28.8307,
+            curLat = 46.9926,
+            curLon = 28.8315
+        )
+        assertNotNull(eastBearing)
+        assertTrue(eastBearing!! in 88f..92f)
+
+        // Sub-jitter movement (< 2m) yields null course bearing
+        assertNull(
+            com.example.data.sensors.HeadingEstimator.computeCourseBearingDegrees(
+                prevLat = 46.9926,
+                prevLon = 28.8307,
+                curLat = 46.992602,
+                curLon = 28.830702
+            )
+        )
+
+        // Walking / stationary prefers live compass over old GPS bearing
+        assertEquals(
+            42f,
+            com.example.data.sensors.HeadingEstimator.resolveHeadingDegrees(
+                compassDegrees = 42f,
+                gpsBearingDegrees = 180f,
+                speedKmh = 4.2f
+            )!!,
+            0.01f
+        )
+
+        // Fast movement prefers GPS course bearing over phone compass
+        assertEquals(
+            180f,
+            com.example.data.sensors.HeadingEstimator.resolveHeadingDegrees(
+                compassDegrees = 42f,
+                gpsBearingDegrees = 180f,
+                speedKmh = 18.5f
+            )!!,
+            0.01f
+        )
+
+        // Device without compass falls back to GPS course bearing cleanly
+        assertEquals(
+            180f,
+            com.example.data.sensors.HeadingEstimator.resolveHeadingDegrees(
+                compassDegrees = null,
+                gpsBearingDegrees = 180f,
+                speedKmh = 4.0f
+            )!!,
+            0.01f
+        )
     }
 }

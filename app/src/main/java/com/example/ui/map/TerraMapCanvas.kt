@@ -519,6 +519,7 @@ private class TerraOsmOverlay(
         textAlign = Paint.Align.LEFT
     }
     private val labelBgRect = RectF()
+    private val directionConeRect = RectF()
     private var lastObservedOrientation: Float = 0f
 
     fun updateState(
@@ -916,7 +917,7 @@ private class TerraOsmOverlay(
             canvas.restore()
         }
 
-        // 6. Live User GPS Puck
+        // 6. Live User GPS Puck + Direction Arrow
         if (telemetry.hasFix) {
             proj.toPixels(GeoPoint(telemetry.latitude, telemetry.longitude), tmpPt1)
             val ux = tmpPt1.x.toFloat()
@@ -926,8 +927,59 @@ private class TerraOsmOverlay(
             fillPaint.color = palette.route.copy(alpha = (1f - pulseProgress) * 0.35f).toArgb()
             canvas.drawCircle(ux, uy, pulseRadius, fillPaint)
 
-            fillPaint.color = android.graphics.Color.WHITE
-            canvas.drawCircle(ux, uy, 10f * density, fillPaint)
+            val heading = telemetry.headingDegrees
+            if (heading != null && !heading.isNaN()) {
+                canvas.save()
+                canvas.rotate(heading, ux, uy)
+
+                // Soft directional field-of-view beam cone
+                val coneRadius = 29f * density
+                directionConeRect.set(
+                    ux - coneRadius,
+                    uy - coneRadius,
+                    ux + coneRadius,
+                    uy + coneRadius
+                )
+                fillPaint.shader = android.graphics.RadialGradient(
+                    ux,
+                    uy,
+                    coneRadius,
+                    palette.route.copy(alpha = 0.42f).toArgb(),
+                    palette.route.copy(alpha = 0f).toArgb(),
+                    android.graphics.Shader.TileMode.CLAMP
+                )
+                canvas.drawArc(directionConeRect, -118f, 56f, true, fillPaint)
+                fillPaint.shader = null
+
+                // Crisp navigation chevron arrow ahead of the position dot (+3dp gap)
+                val tipY = uy - 22.4f * density
+                val wingY = uy - 13.2f * density
+                val notchY = uy - 15.6f * density
+                val halfW = 5.9f * density
+                reusablePath.reset()
+                reusablePath.moveTo(ux, tipY)
+                reusablePath.lineTo(ux + halfW, wingY)
+                reusablePath.lineTo(ux, notchY)
+                reusablePath.lineTo(ux - halfW, wingY)
+                reusablePath.close()
+
+                if (mapSettings.showLocationOutline) {
+                    strokePaint.color = android.graphics.Color.WHITE
+                    strokePaint.strokeWidth = 2.6f * density
+                    strokePaint.strokeJoin = Paint.Join.ROUND
+                    canvas.drawPath(reusablePath, strokePaint)
+                }
+
+                fillPaint.color = palette.route.toArgb()
+                canvas.drawPath(reusablePath, fillPaint)
+
+                canvas.restore()
+            }
+
+            if (mapSettings.showLocationOutline) {
+                fillPaint.color = android.graphics.Color.WHITE
+                canvas.drawCircle(ux, uy, 10f * density, fillPaint)
+            }
 
             fillPaint.color = palette.route.toArgb()
             canvas.drawCircle(ux, uy, 6.8f * density, fillPaint)

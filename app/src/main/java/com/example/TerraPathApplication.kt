@@ -6,6 +6,7 @@ import com.example.data.local.TerraPathDatabase
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.remote.LocationSearchService
 import com.example.data.repository.TerraRepository
+import com.example.data.sensors.CompassHeadingTracker
 import com.example.data.sensors.LocationTracker
 import com.example.data.sensors.StepSensorTracker
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +20,7 @@ class AppContainer(application: Application) {
     private val database = TerraPathDatabase.getInstance(application)
     val preferences = UserPreferencesRepository(application)
     val locationTracker = LocationTracker(application)
+    val compassHeadingTracker = CompassHeadingTracker(application)
     val stepSensorTracker = StepSensorTracker(application)
     val locationSearchService = LocationSearchService(application)
     val repository = TerraRepository(

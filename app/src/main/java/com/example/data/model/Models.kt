@@ -314,6 +314,8 @@ data class LocationTelemetry(
     val longitude: Double = 0.0,
     val speedKmh: Float = 0f,
     val accuracyMeters: Float = 0f,
+    val bearingDegrees: Float? = null,
+    val headingDegrees: Float? = null,
     val hasFix: Boolean = false,
     val hasPermission: Boolean = false,
     val lastUpdatedAt: Long = 0L
@@ -397,6 +399,7 @@ data class MapDisplaySettings(
     val showSectorLabels: Boolean = false,
     val smoothFadeEnabled: Boolean = true,
     val uiBlurEnabled: Boolean = false,
+    val showLocationOutline: Boolean = true,
     val markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON
 )
 

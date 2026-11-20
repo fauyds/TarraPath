@@ -421,6 +421,7 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onToggleSearchLabels = { viewModel.setShowSearchLabels(it) },
                                 onToggleSectorLabels = { viewModel.setShowSectorLabels(it) },
                                 onToggleUiBlur = { viewModel.setUiBlurEnabled(it) },
+                                onToggleLocationOutline = { viewModel.setShowLocationOutline(it) },
                                 onSelectMarkerStyle = { viewModel.setMarkerStyle(it) }
                             )
                         }
