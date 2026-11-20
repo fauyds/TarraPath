@@ -713,11 +713,16 @@ fun ExploreScreen(
                             null
                         }
                     ) {
+                        val attribution = when {
+                            !mapSettings.showStreetNames -> "© OpenFreeMap • © OSM"
+                            apiProvider == ApiProvider.GEOAPIFY && apiKey.isNotBlank() -> "© Geoapify • © OSM"
+                            else -> "© OSM"
+                        }
                         Text(
                             text = if (telemetry.hasFix) {
-                                String.format("%.4f, %.4f • © OSM", telemetry.latitude, telemetry.longitude)
+                                String.format("%.4f, %.4f • %s", telemetry.latitude, telemetry.longitude, attribution)
                             } else {
-                                "© OpenStreetMap"
+                                attribution
                             },
                             style = TelemetryTextStyle.copy(fontSize = 11.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,

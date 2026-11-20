@@ -213,40 +213,143 @@ class SettingsAndColorPickerTest {
     }
 
     @Test
-    fun resolveMapTileSpec_usesGeoapifyTilesWhenConfiguredAndKeylessOsmOtherwise() {
+    fun preferences_persistAllMapLabelToggles() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val prefs = UserPreferencesRepository(context)
+
+        prefs.setShowStreetNames(false)
+        prefs.setShowMarkerLabels(false)
+        prefs.setShowSearchLabels(false)
+        prefs.setShowSectorLabels(true)
+        val labelDisabled = prefs.mapDisplaySettings.first()
+        assertTrue(!labelDisabled.showStreetNames)
+        assertTrue(!labelDisabled.showMarkerLabels)
+        assertTrue(!labelDisabled.showSearchLabels)
+        assertTrue(labelDisabled.showSectorLabels)
+
+        prefs.setShowStreetNames(true)
+        prefs.setShowMarkerLabels(true)
+        prefs.setShowSearchLabels(true)
+        prefs.setShowSectorLabels(false)
+        val restored = prefs.mapDisplaySettings.first()
+        assertTrue(restored.showStreetNames)
+        assertTrue(restored.showMarkerLabels)
+        assertTrue(restored.showSearchLabels)
+        assertTrue(!restored.showSectorLabels)
+    }
+
+    @Test
+    fun resolveMapTileSpec_handlesStreetNamesToggleAndProvidersCorrectly() {
         val sampleIndex = org.osmdroid.util.MapTileIndex.getTileIndex(16, 38012, 23084)
 
         val geoDark = com.example.ui.map.resolveMapTileSpec(
             isDarkTheme = true,
+            showStreetNames = true,
             apiKey = "test-geo-key",
             apiProvider = ApiProvider.GEOAPIFY
         )
         assertTrue(!geoDark.useDarkInvertFilter)
+        val geoDarkOnline = geoDark.tileSource as org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
         assertEquals(
             "https://maps.geoapify.com/v1/tile/dark-matter/16/38012/23084.png?apiKey=test-geo-key",
-            geoDark.tileSource.getTileURLString(sampleIndex)
+            geoDarkOnline.getTileURLString(sampleIndex)
         )
 
         val geoLight = com.example.ui.map.resolveMapTileSpec(
             isDarkTheme = false,
+            showStreetNames = true,
             apiKey = "test-geo-key",
             apiProvider = ApiProvider.GEOAPIFY
         )
         assertTrue(!geoLight.useDarkInvertFilter)
+        val geoLightOnline = geoLight.tileSource as org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
         assertEquals(
             "https://maps.geoapify.com/v1/tile/osm-bright/16/38012/23084.png?apiKey=test-geo-key",
-            geoLight.tileSource.getTileURLString(sampleIndex)
+            geoLightOnline.getTileURLString(sampleIndex)
         )
 
         val fallbackDark = com.example.ui.map.resolveMapTileSpec(
             isDarkTheme = true,
+            showStreetNames = true,
             apiKey = "",
             apiProvider = ApiProvider.CUSTOM_GENERAL
         )
         assertTrue(fallbackDark.useDarkInvertFilter)
-        val fallbackUrl = fallbackDark.tileSource.getTileURLString(sampleIndex)
+        val fallbackOnline = fallbackDark.tileSource as org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
+        val fallbackUrl = fallbackOnline.getTileURLString(sampleIndex)
         assertTrue(fallbackUrl.startsWith("https://tile.openstreetmap.org/"))
         assertTrue(!fallbackUrl.contains("cartocdn"))
+
+        // Disabling Street & Map Names switches to label-free vector tiles regardless of provider
+        val noLabelsGeoDark = com.example.ui.map.resolveMapTileSpec(
+            isDarkTheme = true,
+            showStreetNames = false,
+            apiKey = "test-geo-key",
+            apiProvider = ApiProvider.GEOAPIFY
+        )
+        assertTrue(noLabelsGeoDark.tileSource is com.example.ui.map.NoLabelsVectorTileSource)
+        assertEquals("OpenFreeMapNoLabelsDark", noLabelsGeoDark.tileSource.name())
+        assertTrue(!noLabelsGeoDark.useDarkInvertFilter)
+
+        val noLabelsOsmLight = com.example.ui.map.resolveMapTileSpec(
+            isDarkTheme = false,
+            showStreetNames = false,
+            apiKey = "",
+            apiProvider = ApiProvider.CUSTOM_GENERAL
+        )
+        assertTrue(noLabelsOsmLight.tileSource is com.example.ui.map.NoLabelsVectorTileSource)
+        assertEquals("OpenFreeMapNoLabelsLight", noLabelsOsmLight.tileSource.name())
+        assertTrue(!noLabelsOsmLight.useDarkInvertFilter)
+    }
+
+    @Test
+    fun mvtTileParser_retainsGeometryLayersAndStripsLabelLayers() {
+        fun varint(value: Int): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            var v = value
+            while ((v and 0x7F.inv()) != 0) {
+                out.write((v and 0x7F) or 0x80)
+                v = v ushr 7
+            }
+            out.write(v and 0x7F)
+            return out.toByteArray()
+        }
+
+        fun lengthDelimited(field: Int, payload: ByteArray): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            out.write(varint((field shl 3) or 2))
+            out.write(varint(payload.size))
+            out.write(payload)
+            return out.toByteArray()
+        }
+
+        fun buildLayer(name: String, includeLineFeature: Boolean): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            out.write(lengthDelimited(1, name.toByteArray(Charsets.UTF_8)))
+            if (includeLineFeature) {
+                val feat = java.io.ByteArrayOutputStream()
+                feat.write(varint((3 shl 3) or 0)) // type tag
+                feat.write(varint(2)) // LINESTRING
+                val geom = intArrayOf(9, 0, 0, 10, 20, 20) // MoveTo(0,0), LineTo(+10,+10)
+                val geomBytes = java.io.ByteArrayOutputStream()
+                geom.forEach { geomBytes.write(varint(it)) }
+                feat.write(lengthDelimited(4, geomBytes.toByteArray()))
+                out.write(lengthDelimited(2, feat.toByteArray()))
+            }
+            return out.toByteArray()
+        }
+
+        val tileBytes = java.io.ByteArrayOutputStream().apply {
+            write(lengthDelimited(3, buildLayer("transportation", includeLineFeature = true)))
+            write(lengthDelimited(3, buildLayer("transportation_name", includeLineFeature = true)))
+            write(lengthDelimited(3, buildLayer("place", includeLineFeature = true)))
+        }.toByteArray()
+
+        val decoded = com.example.ui.map.MvtTileParser.parse(tileBytes)
+        assertTrue(decoded.layersByName.containsKey("transportation"))
+        assertEquals(1, decoded.layersByName["transportation"]?.features?.size)
+        assertTrue(!decoded.layersByName.containsKey("transportation_name"))
+        assertTrue(!decoded.layersByName.containsKey("place"))
     }
 
     @Test

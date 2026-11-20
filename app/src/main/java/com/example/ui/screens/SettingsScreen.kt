@@ -372,7 +372,7 @@ fun SettingsScreen(
                         SettingToggleCard(
                             icon = Icons.Filled.Signpost,
                             title = "Street & Map Names",
-                            subtitle = "Show street, neighborhood, and city names on OpenStreetMap tiles",
+                            subtitle = "Show street, neighborhood, and city names on map tiles",
                             checked = mapSettings.showStreetNames,
                             onCheckedChange = onToggleStreetNames,
                             shape = groupedCardShape(0, 5),

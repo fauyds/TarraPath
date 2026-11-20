@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -61,6 +62,7 @@ import kotlinx.coroutines.delay
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.tilesource.ITileSource
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
@@ -104,8 +106,11 @@ private val OSM_DARK_INVERT_FILTER = ColorMatrixColorFilter(
     )
 )
 
+private val NO_LABELS_LIGHT = NoLabelsVectorTileSource(isDarkTheme = false)
+private val NO_LABELS_DARK = NoLabelsVectorTileSource(isDarkTheme = true)
+
 data class ResolvedMapTileSpec(
-    val tileSource: OnlineTileSourceBase,
+    val tileSource: ITileSource,
     val useDarkInvertFilter: Boolean
 )
 
@@ -142,9 +147,16 @@ fun createGeoapifyTileSource(
 
 fun resolveMapTileSpec(
     isDarkTheme: Boolean,
-    apiKey: String,
-    apiProvider: ApiProvider
+    showStreetNames: Boolean = true,
+    apiKey: String = "",
+    apiProvider: ApiProvider = ApiProvider.CUSTOM_GENERAL
 ): ResolvedMapTileSpec {
+    if (!showStreetNames) {
+        return ResolvedMapTileSpec(
+            tileSource = if (isDarkTheme) NO_LABELS_DARK else NO_LABELS_LIGHT,
+            useDarkInvertFilter = false
+        )
+    }
     val cleanKey = LocationSearchService.sanitizeApiKey(apiKey)
     return if (apiProvider == ApiProvider.GEOAPIFY && cleanKey.isNotEmpty()) {
         ResolvedMapTileSpec(
@@ -261,16 +273,17 @@ fun TerraMapCanvas(
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var isProgrammaticMove by remember { mutableStateOf(false) }
 
-    val tileSpec = remember(isDarkTheme, apiKey, apiProvider) {
+    val tileSpec = remember(isDarkTheme, mapSettings.showStreetNames, apiKey, apiProvider) {
         resolveMapTileSpec(
             isDarkTheme = isDarkTheme,
+            showStreetNames = mapSettings.showStreetNames,
             apiKey = apiKey,
             apiProvider = apiProvider
         )
     }
 
     val mapView = remember {
-        MapView(context).apply {
+        MapView(context, TerraMapTileProvider(context, tileSpec.tileSource)).apply {
             setTileSource(tileSpec.tileSource)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
@@ -322,15 +335,21 @@ fun TerraMapCanvas(
         }
     }
 
-    // Update native light/dark tile source & loading surface colors automatically
-    LaunchedEffect(tileSpec.tileSource.name(), tileSpec.useDarkInvertFilter, isDarkTheme, mapView) {
+    // Update native light/dark/no-labels tile source & loading surface colors automatically
+    LaunchedEffect(
+        tileSpec.tileSource.name(),
+        tileSpec.useDarkInvertFilter,
+        isDarkTheme,
+        mapSettings.showStreetNames,
+        mapView
+    ) {
         if (mapView.tileProvider.tileSource.name() != tileSpec.tileSource.name()) {
             mapView.tileProvider.clearTileCache()
             mapView.setTileSource(tileSpec.tileSource)
         }
         mapView.overlayManager.tilesOverlay.apply {
             setColorFilter(if (tileSpec.useDarkInvertFilter) OSM_DARK_INVERT_FILTER else null)
-            loadingBackgroundColor = if (isDarkTheme) 0xFF1A1D21.toInt() else 0xFFF0EDE6.toInt()
+            loadingBackgroundColor = if (isDarkTheme) 0xFF1A1E24.toInt() else 0xFFF2EFE9.toInt()
             loadingLineColor = if (isDarkTheme) 0xFF2B3036.toInt() else 0xFFD9D4CA.toInt()
         }
         mapView.invalidate()
@@ -402,27 +421,30 @@ fun TerraMapCanvas(
         }
     }
 
-    terraOverlay.updateState(
-        palette = palette,
-        isDarkTheme = isDarkTheme,
-        mapSettings = mapSettings,
-        exploredSet = exploredSet,
-        unlockTimes = unlockTimes,
-        nowMillis = nowMillis,
-        activeRoutePoints = activeRoutePoints,
-        highlightedRoutePoints = highlightedRoutePoints,
-        highlightedRouteColor = highlightedRouteColor,
-        markers = markers,
-        searchedPlace = searchedPlace,
-        telemetry = telemetry,
-        pulseProgress = pulseProgress,
-        showFogOfWar = showFogOfWar,
-        revealedMarkerId = revealedMarkerId
-    )
-    mapView.invalidate()
+    SideEffect {
+        terraOverlay.updateState(
+            palette = palette,
+            isDarkTheme = isDarkTheme,
+            mapSettings = mapSettings,
+            exploredSet = exploredSet,
+            unlockTimes = unlockTimes,
+            nowMillis = nowMillis,
+            activeRoutePoints = activeRoutePoints,
+            highlightedRoutePoints = highlightedRoutePoints,
+            highlightedRouteColor = highlightedRouteColor,
+            markers = markers,
+            searchedPlace = searchedPlace,
+            telemetry = telemetry,
+            pulseProgress = pulseProgress,
+            showFogOfWar = showFogOfWar,
+            revealedMarkerId = revealedMarkerId
+        )
+        mapView.invalidate()
+    }
 
     AndroidView(
         factory = { mapView },
+        update = { view -> view.invalidate() },
         modifier = modifier.fillMaxSize()
     )
 }
@@ -1138,15 +1160,17 @@ fun MiniMapPalettePreview(
             }
         }
 
-        if (showGridLines) {
+        if (showGridLines || (showSectorLabels && routePoints.isEmpty())) {
             for (c in 0 until cols) {
                 for (r in 0 until rows) {
-                    drawRect(
-                        color = palette.gridStroke,
-                        topLeft = Offset(c * cellW, r * cellH),
-                        size = Size(cellW, cellH),
-                        style = Stroke(width = 1.5f)
-                    )
+                    if (showGridLines) {
+                        drawRect(
+                            color = palette.gridStroke,
+                            topLeft = Offset(c * cellW, r * cellH),
+                            size = Size(cellW, cellH),
+                            style = Stroke(width = 1.5f)
+                        )
+                    }
                     if (showSectorLabels && routePoints.isEmpty()) {
                         drawContext.canvas.nativeCanvas.drawText(
                             "S $c:$r",
