@@ -160,7 +160,7 @@ fun ExpressiveCard(
                 if (onClick != null) Modifier.clip(shape).clickable(onClick = onClick) else Modifier
             ),
         shape = shape,
-        color = if (backdropActive) Color.Transparent else containerColor,
+        color = if (blurOn) containerColor.copy(alpha = 0.78f) else containerColor,
         shadowElevation = resolvedElevation,
         border = resolvedBorder
     ) {

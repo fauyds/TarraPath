@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
@@ -127,7 +128,7 @@ fun LocationSearchBarAndResults(
                 .defaultMinSize(minHeight = 50.dp)
                 .applyBackdropBlur(shape = searchPillShape, tintColor = ExpressiveTheme.colors.cardSurface),
             shape = searchPillShape,
-            color = if (backdropActive) Color.Transparent else ExpressiveTheme.colors.cardSurface,
+            color = if (blurOn) ExpressiveTheme.colors.cardSurface.copy(alpha = 0.78f) else ExpressiveTheme.colors.cardSurface,
             shadowElevation = if (blurOn) 0.dp else 4.dp,
             border = if (blurOn) {
                 androidx.compose.foundation.BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
@@ -561,6 +562,7 @@ fun SelectedSearchPlaceBanner(
     onFocusMap: () -> Unit,
     onDropMarker: () -> Unit,
     onDismiss: () -> Unit,
+    onWalkHere: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val distanceText = if (telemetry.hasFix) {
@@ -577,83 +579,105 @@ fun SelectedSearchPlaceBanner(
         modifier = modifier.widthIn(max = 560.dp).fillMaxWidth(),
         shadowElevation = 6.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE11D48)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.LocationOn,
+                        contentDescription = place.title,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = place.title,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = buildString {
+                            append(place.categoryLabel)
+                            if (distanceText != null) append(" • $distanceText")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = String.format("%.5f, %.5f", place.latitude, place.longitude),
+                        style = TelemetryTextStyle.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                IconButton(
+                    onClick = onFocusMap,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Place,
+                        contentDescription = "Center on place",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(48.dp).testTag("dismiss_selected_search_place")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Dismiss searched place",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFE11D48)),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(end = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.LocationOn,
-                    contentDescription = place.title,
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = place.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = buildString {
-                        append(place.categoryLabel)
-                        if (distanceText != null) append(" • $distanceText")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = String.format("%.5f, %.5f", place.latitude, place.longitude),
-                    style = TelemetryTextStyle.copy(fontSize = 11.sp),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            ExpressivePillButton(
-                text = "Pin",
-                icon = Icons.Filled.AddLocationAlt,
-                onClick = onDropMarker,
-                subtle = true,
-                modifier = Modifier.testTag("pin_selected_search_place")
-            )
-
-            IconButton(
-                onClick = onFocusMap,
-                modifier = Modifier.size(48.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Place,
-                    contentDescription = "Center on place",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.size(48.dp).testTag("dismiss_selected_search_place")
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Dismiss searched place",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                if (onWalkHere != null) {
+                    ExpressivePillButton(
+                        text = "Walk Here",
+                        icon = Icons.AutoMirrored.Filled.DirectionsWalk,
+                        onClick = onWalkHere,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("walk_to_search_place_button")
+                    )
+                }
+                ExpressivePillButton(
+                    text = "Pin",
+                    icon = Icons.Filled.AddLocationAlt,
+                    onClick = onDropMarker,
+                    subtle = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("pin_selected_search_place")
                 )
             }
         }

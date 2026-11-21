@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.data.model.ApiProvider
 import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MarkerStyle
+import com.example.data.model.RoutingMode
 import com.example.data.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -37,6 +38,7 @@ class UserPreferencesRepository(private val context: Context) {
         val UI_BLUR_ENABLED = booleanPreferencesKey("ui_blur_enabled")
         val SHOW_LOCATION_OUTLINE = booleanPreferencesKey("show_location_outline")
         val MARKER_STYLE = stringPreferencesKey("marker_style")
+        val ROUTING_MODE = stringPreferencesKey("routing_mode")
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
@@ -56,6 +58,9 @@ class UserPreferencesRepository(private val context: Context) {
         val rawMarkerStyle = prefs[Keys.MARKER_STYLE] ?: MarkerStyle.CIRCLE_ICON.name
         val parsedMarkerStyle = MarkerStyle.entries.firstOrNull { it.name == rawMarkerStyle }
             ?: MarkerStyle.CIRCLE_ICON
+        val rawRoutingMode = prefs[Keys.ROUTING_MODE] ?: RoutingMode.ONLINE.name
+        val parsedRoutingMode = RoutingMode.entries.firstOrNull { it.name == rawRoutingMode }
+            ?: RoutingMode.ONLINE
         MapDisplaySettings(
             easyModeEnabled = prefs[Keys.EASY_MODE_ENABLED] ?: false,
             showGridLines = prefs[Keys.SHOW_GRID_LINES] ?: true,
@@ -67,7 +72,8 @@ class UserPreferencesRepository(private val context: Context) {
             smoothFadeEnabled = prefs[Keys.SHOW_SMOOTH_FADE] ?: true,
             uiBlurEnabled = prefs[Keys.UI_BLUR_ENABLED] ?: false,
             showLocationOutline = prefs[Keys.SHOW_LOCATION_OUTLINE] ?: true,
-            markerStyle = parsedMarkerStyle
+            markerStyle = parsedMarkerStyle,
+            routingMode = parsedRoutingMode
         )
     }
 
@@ -174,5 +180,9 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setMarkerStyle(style: MarkerStyle) {
         context.dataStore.edit { it[Keys.MARKER_STYLE] = style.name }
+    }
+
+    suspend fun setRoutingMode(mode: RoutingMode) {
+        context.dataStore.edit { it[Keys.ROUTING_MODE] = mode.name }
     }
 }

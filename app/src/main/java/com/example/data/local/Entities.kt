@@ -97,3 +97,22 @@ data class ExplorerStatsEntity(
     val maxSpeedKmh: Float = 0f,
     val totalRecordedMillis: Long = 0L
 )
+
+@Entity(tableName = "offline_regions")
+data class OfflineRegionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val name: String,
+    val centerLat: Double,
+    val centerLon: Double,
+    val radiusMeters: Int,
+    val southLat: Double,
+    val westLon: Double,
+    val northLat: Double,
+    val eastLon: Double,
+    val nodeCount: Int,
+    val edgeCount: Int,
+    val tileCount: Int,
+    val sizeBytes: Long,
+    val graphFileName: String,
+    val downloadedAt: Long
+)

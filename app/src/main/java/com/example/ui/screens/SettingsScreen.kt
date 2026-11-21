@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.Bookmark
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Signpost
 import androidx.compose.material.icons.filled.Tag
@@ -72,11 +74,14 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.local.OfflineRegionEntity
 import com.example.data.model.ApiKeyTestState
 import com.example.data.model.ApiProvider
 import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MapPalette
 import com.example.data.model.MarkerStyle
+import com.example.data.model.OfflineDownloadProgress
+import com.example.data.model.RoutingMode
 import com.example.data.model.ThemeMode
 import com.example.ui.components.ApplyDialogBlurIfEnabled
 import com.example.ui.components.ColorPickerMath
@@ -88,7 +93,9 @@ import com.example.ui.components.GoogleIconLibraryDialog
 import com.example.ui.components.LocalBackdropHazeState
 import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.MarkerStylePreviewBadge
+import com.example.ui.components.OfflineAreasDialog
 import com.example.ui.components.conditionalBlur
+import com.example.ui.components.formatStorageBytes
 import com.example.ui.components.groupedCardShape
 import com.example.ui.icons.GoogleIconRegistry
 import com.example.ui.map.MiniMapPalettePreview
@@ -122,6 +129,14 @@ fun SettingsScreen(
     onToggleUiBlur: (Boolean) -> Unit,
     onToggleLocationOutline: (Boolean) -> Unit,
     onSelectMarkerStyle: (MarkerStyle) -> Unit,
+    offlineRegions: List<OfflineRegionEntity> = emptyList(),
+    offlineDownloadProgress: OfflineDownloadProgress = OfflineDownloadProgress(),
+    defaultDownloadLat: Double = 37.7749,
+    defaultDownloadLon: Double = -122.4194,
+    onSelectRoutingMode: (RoutingMode) -> Unit = {},
+    onDownloadOfflineArea: (name: String, lat: Double, lon: Double, radiusMeters: Int) -> Unit = { _, _, _, _ -> },
+    onDeleteOfflineRegion: (OfflineRegionEntity) -> Unit = {},
+    onClearOfflineDownloadError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -130,6 +145,7 @@ fun SettingsScreen(
     var previewedIconName by remember { mutableStateOf("Place") }
     var showThemeColorPicker by remember { mutableStateOf(false) }
     var showApiKeyDialog by remember { mutableStateOf(false) }
+    var showOfflineAreasDialog by remember { mutableStateOf(false) }
 
     val primaryColorInt = MaterialTheme.colorScheme.primary.toArgb().toLong() and 0xFFFFFFFFL
     val displayedAccentColor = customAccentColorArgb?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.primary
@@ -137,7 +153,7 @@ fun SettingsScreen(
         ColorPickerMath.formatHexRgb(displayedAccentColor)
     }
 
-    val anyDialogOpen = showIconBrowser || showThemeColorPicker || showApiKeyDialog
+    val anyDialogOpen = showIconBrowser || showThemeColorPicker || showApiKeyDialog || showOfflineAreasDialog
     val hazeState = LocalBackdropHazeState.current
     val bottomOverlayPadding = LocalBottomOverlayPadding.current
 
@@ -379,6 +395,82 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(16.dp),
                         switchTestTag = "location_outline_switch"
                     )
+                }
+            }
+
+            // Walking Navigation & Offline Areas
+            item {
+                val totalOfflineBytes = remember(offlineRegions) { offlineRegions.sumOf { it.sizeBytes } }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Walking Navigation & Offline Areas",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ExpressiveHorizontalSegmentedSelector(
+                        options = RoutingMode.entries,
+                        selectedOption = mapSettings.routingMode,
+                        onOptionSelected = onSelectRoutingMode,
+                        labelProvider = { it.label },
+                        testTagPrefix = "routing_mode"
+                    )
+                    Text(
+                        text = mapSettings.routingMode.subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    ExpressiveCard(
+                        onClick = { showOfflineAreasDialog = true },
+                        modifier = Modifier.testTag("settings_offline_areas_card")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = ExpressiveTheme.colors.nestedElementSurface,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = if (offlineRegions.isNotEmpty()) {
+                                            Icons.Filled.OfflinePin
+                                        } else {
+                                            Icons.AutoMirrored.Filled.DirectionsWalk
+                                        },
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Offline Map & Route Areas",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (offlineRegions.isEmpty()) {
+                                        "No areas downloaded • Tap to download for CPU offline walking"
+                                    } else {
+                                        "${offlineRegions.size} areas downloaded • ${formatStorageBytes(totalOfflineBytes)}"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Filled.ChevronRight,
+                                contentDescription = "Manage offline areas",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
 
@@ -683,6 +775,19 @@ fun SettingsScreen(
                 onResetApiKeyTest()
                 showApiKeyDialog = false
             }
+        )
+    }
+
+    if (showOfflineAreasDialog) {
+        OfflineAreasDialog(
+            centerLat = defaultDownloadLat,
+            centerLon = defaultDownloadLon,
+            offlineRegions = offlineRegions,
+            downloadProgress = offlineDownloadProgress,
+            onDownloadArea = onDownloadOfflineArea,
+            onDeleteRegion = onDeleteOfflineRegion,
+            onClearError = onClearOfflineDownloadError,
+            onDismiss = { showOfflineAreasDialog = false }
         )
     }
 }

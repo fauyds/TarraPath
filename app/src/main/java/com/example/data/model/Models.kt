@@ -389,6 +389,71 @@ enum class MarkerStyle(
     )
 }
 
+enum class RoutingMode(
+    val label: String,
+    val subtitle: String
+) {
+    ONLINE(
+        label = "Online",
+        subtitle = "Live walking routes calculated using OpenStreetMap routing servers"
+    ),
+    OFFLINE(
+        label = "Offline (CPU)",
+        subtitle = "On-device CPU walking routes using downloaded areas with no internet"
+    )
+}
+
+sealed interface WalkTarget {
+    val label: String
+    val targetLat: Double
+    val targetLon: Double
+
+    data class SavedPoint(
+        val markerId: Long,
+        override val label: String,
+        override val targetLat: Double,
+        override val targetLon: Double
+    ) : WalkTarget
+
+    data class SavedTrackStart(
+        val routeId: Long,
+        override val label: String,
+        override val targetLat: Double,
+        override val targetLon: Double
+    ) : WalkTarget
+
+    data class SearchedPlace(
+        val placeId: String,
+        override val label: String,
+        override val targetLat: Double,
+        override val targetLon: Double
+    ) : WalkTarget
+}
+
+data class WalkingRouteState(
+    val target: WalkTarget? = null,
+    val routePoints: List<LatLonPoint> = emptyList(),
+    val routeDistanceMeters: Double = 0.0,
+    val remainingDistanceMeters: Double = 0.0,
+    val estimatedWalkSeconds: Long = 0L,
+    val isCalculating: Boolean = false,
+    val modeUsed: RoutingMode = RoutingMode.ONLINE,
+    val providerLabel: String? = null,
+    val errorMessage: String? = null,
+    val arrivedBannerLabel: String? = null,
+    val lastRoutedLat: Double? = null,
+    val lastRoutedLon: Double? = null,
+    val lastRoutedAtMillis: Long = 0L
+)
+
+data class OfflineDownloadProgress(
+    val isDownloading: Boolean = false,
+    val regionName: String = "",
+    val stage: String = "",
+    val progressFraction: Float = 0f,
+    val errorMessage: String? = null
+)
+
 data class MapDisplaySettings(
     val easyModeEnabled: Boolean = false,
     val showGridLines: Boolean = true,
@@ -400,7 +465,8 @@ data class MapDisplaySettings(
     val smoothFadeEnabled: Boolean = true,
     val uiBlurEnabled: Boolean = false,
     val showLocationOutline: Boolean = true,
-    val markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON
+    val markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON,
+    val routingMode: RoutingMode = RoutingMode.ONLINE
 )
 
 enum class ApiProvider(

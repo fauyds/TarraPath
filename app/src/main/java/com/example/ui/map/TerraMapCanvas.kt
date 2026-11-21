@@ -2,7 +2,9 @@ package com.example.ui.map
 
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.ColorMatrixColorFilter
+import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.PathEffect
 import android.graphics.Path as AndroidPath
 import android.graphics.Point
 import android.graphics.RectF
@@ -53,6 +55,7 @@ import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MapPalette
 import com.example.data.model.MarkerCategory
 import com.example.data.model.MarkerStyle
+import com.example.data.model.RoutingMode
 import com.example.data.model.SearchPlaceResult
 import com.example.data.remote.LocationSearchService
 import com.example.domain.GeoGrid
@@ -209,6 +212,8 @@ fun TerraMapCanvas(
     activeRoutePoints: List<LatLonPoint>,
     highlightedRoutePoints: List<LatLonPoint>,
     highlightedRouteColor: Color?,
+    walkingRoutePoints: List<LatLonPoint> = emptyList(),
+    walkingTargetPoint: LatLonPoint? = null,
     markers: List<MapMarkerEntity>,
     searchedPlace: SearchPlaceResult?,
     telemetry: LocationTelemetry,
@@ -335,14 +340,16 @@ fun TerraMapCanvas(
         }
     }
 
-    // Update native light/dark/no-labels tile source & loading surface colors automatically
+    // Update native light/dark/no-labels tile source, offline network mode, & loading surface colors automatically
     LaunchedEffect(
         tileSpec.tileSource.name(),
         tileSpec.useDarkInvertFilter,
         isDarkTheme,
         mapSettings.showStreetNames,
+        mapSettings.routingMode,
         mapView
     ) {
+        mapView.setUseDataConnection(mapSettings.routingMode != RoutingMode.OFFLINE)
         if (mapView.tileProvider.tileSource.name() != tileSpec.tileSource.name()) {
             mapView.tileProvider.clearTileCache()
             mapView.setTileSource(tileSpec.tileSource)
@@ -432,6 +439,8 @@ fun TerraMapCanvas(
             activeRoutePoints = activeRoutePoints,
             highlightedRoutePoints = highlightedRoutePoints,
             highlightedRouteColor = highlightedRouteColor,
+            walkingRoutePoints = walkingRoutePoints,
+            walkingTargetPoint = walkingTargetPoint,
             markers = markers,
             searchedPlace = searchedPlace,
             telemetry = telemetry,
@@ -475,6 +484,8 @@ private class TerraOsmOverlay(
     private var activeRoutePoints: List<LatLonPoint> = emptyList()
     private var highlightedRoutePoints: List<LatLonPoint> = emptyList()
     private var highlightedRouteColor: Color? = null
+    private var walkingRoutePoints: List<LatLonPoint> = emptyList()
+    private var walkingTargetPoint: LatLonPoint? = null
     private var markers: List<MapMarkerEntity> = emptyList()
     private var searchedPlace: SearchPlaceResult? = null
     private var telemetry: LocationTelemetry = LocationTelemetry()
@@ -505,6 +516,22 @@ private class TerraOsmOverlay(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    private val walkDotEffect: PathEffect = DashPathEffect(
+        floatArrayOf(1f, 14f * density),
+        0f
+    )
+    private val walkCasingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        pathEffect = walkDotEffect
+    }
+    private val walkStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        pathEffect = walkDotEffect
+    }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val iconBitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -532,6 +559,8 @@ private class TerraOsmOverlay(
         activeRoutePoints: List<LatLonPoint>,
         highlightedRoutePoints: List<LatLonPoint>,
         highlightedRouteColor: Color?,
+        walkingRoutePoints: List<LatLonPoint>,
+        walkingTargetPoint: LatLonPoint?,
         markers: List<MapMarkerEntity>,
         searchedPlace: SearchPlaceResult?,
         telemetry: LocationTelemetry,
@@ -548,6 +577,8 @@ private class TerraOsmOverlay(
         this.activeRoutePoints = activeRoutePoints
         this.highlightedRoutePoints = highlightedRoutePoints
         this.highlightedRouteColor = highlightedRouteColor
+        this.walkingRoutePoints = walkingRoutePoints
+        this.walkingTargetPoint = walkingTargetPoint
         this.markers = markers
         this.searchedPlace = searchedPlace
         this.telemetry = telemetry
@@ -740,6 +771,16 @@ private class TerraOsmOverlay(
                 points = highlightedRoutePoints,
                 color = (highlightedRouteColor ?: palette.route).toArgb(),
                 strokePx = 5.5f * density
+            )
+        }
+
+        // 2b. Automatic Walking Guidance Line (pedestrian dotted route + target ring)
+        if (walkingRoutePoints.size >= 2) {
+            drawWalkingGuidanceRoute(
+                canvas = canvas,
+                mapView = mapView,
+                points = walkingRoutePoints,
+                targetPoint = walkingTargetPoint
             )
         }
 
@@ -1020,6 +1061,43 @@ private class TerraOsmOverlay(
         canvas.drawCircle(tmpPt2.x.toFloat(), tmpPt2.y.toFloat(), strokePx * 0.9f, fillPaint)
         fillPaint.color = color
         canvas.drawCircle(tmpPt2.x.toFloat(), tmpPt2.y.toFloat(), strokePx * 0.55f, fillPaint)
+    }
+
+    private fun drawWalkingGuidanceRoute(
+        canvas: AndroidCanvas,
+        mapView: MapView,
+        points: List<LatLonPoint>,
+        targetPoint: LatLonPoint?
+    ) {
+        val proj = mapView.projection
+        reusablePath.reset()
+        points.forEachIndexed { idx, pt ->
+            proj.toPixels(GeoPoint(pt.latitude, pt.longitude), tmpPt1)
+            if (idx == 0) reusablePath.moveTo(tmpPt1.x.toFloat(), tmpPt1.y.toFloat())
+            else reusablePath.lineTo(tmpPt1.x.toFloat(), tmpPt1.y.toFloat())
+        }
+
+        val walkColor = 0xFF0EA5E9.toInt() // Crisp navigation sky-blue dots
+        walkCasingPaint.color = if (isDarkTheme) 0xE60F172A.toInt() else android.graphics.Color.WHITE
+        walkCasingPaint.strokeWidth = 9.5f * density
+        canvas.drawPath(reusablePath, walkCasingPaint)
+
+        walkStrokePaint.color = walkColor
+        walkStrokePaint.strokeWidth = 6f * density
+        canvas.drawPath(reusablePath, walkStrokePaint)
+
+        val endPt = targetPoint ?: points.last()
+        proj.toPixels(GeoPoint(endPt.latitude, endPt.longitude), tmpPt2)
+        val dx = tmpPt2.x.toFloat()
+        val dy = tmpPt2.y.toFloat()
+
+        fillPaint.color = Color(0xFF0EA5E9).copy(alpha = (1f - pulseProgress) * 0.35f).toArgb()
+        canvas.drawCircle(dx, dy, (10f + pulseProgress * 16f) * density, fillPaint)
+
+        fillPaint.color = android.graphics.Color.WHITE
+        canvas.drawCircle(dx, dy, 8f * density, fillPaint)
+        fillPaint.color = walkColor
+        canvas.drawCircle(dx, dy, 5f * density, fillPaint)
     }
 }
 

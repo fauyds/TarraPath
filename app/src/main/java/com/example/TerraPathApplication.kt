@@ -5,6 +5,8 @@ import android.content.Context
 import com.example.data.local.TerraPathDatabase
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.remote.LocationSearchService
+import com.example.data.remote.WalkingRouteService
+import com.example.data.repository.OfflineRegionManager
 import com.example.data.repository.TerraRepository
 import com.example.data.sensors.CompassHeadingTracker
 import com.example.data.sensors.LocationTracker
@@ -23,6 +25,11 @@ class AppContainer(application: Application) {
     val compassHeadingTracker = CompassHeadingTracker(application)
     val stepSensorTracker = StepSensorTracker(application)
     val locationSearchService = LocationSearchService(application)
+    val walkingRouteService = WalkingRouteService()
+    val offlineRegionManager = OfflineRegionManager(
+        context = application,
+        regionDao = database.offlineRegionDao()
+    )
     val repository = TerraRepository(
         chunkDao = database.chunkDao(),
         routeDao = database.routeDao(),

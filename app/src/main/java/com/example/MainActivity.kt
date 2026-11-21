@@ -214,9 +214,19 @@ fun TerraPathApp(appContainer: AppContainer) {
         val activeBanner by viewModel.activeAchievementBanner.collectAsStateWithLifecycle()
         val locationSearchState by viewModel.locationSearchState.collectAsStateWithLifecycle()
         val selectedSearchPlace by viewModel.selectedSearchPlace.collectAsStateWithLifecycle()
+        val walkingRouteState by viewModel.walkingRouteState.collectAsStateWithLifecycle()
+        val offlineRegions by viewModel.offlineRegions.collectAsStateWithLifecycle()
+        val offlineDownloadProgress by viewModel.offlineDownloadProgress.collectAsStateWithLifecycle()
 
         val highlightedRoute = remember(allRoutes, highlightedRouteId) {
             allRoutes.firstOrNull { it.id == highlightedRouteId }
+        }
+        val defaultDownloadCenter = remember(telemetry.hasFix, telemetry.latitude, telemetry.longitude, exploredChunks) {
+            when {
+                telemetry.hasFix -> telemetry.latitude to telemetry.longitude
+                exploredChunks.isNotEmpty() -> exploredChunks.first().centerLat to exploredChunks.first().centerLon
+                else -> 37.7749 to -122.4194
+            }
         }
 
         val navController = rememberNavController()
@@ -344,7 +354,22 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 },
                                 onDeleteMarker = { id -> viewModel.deleteMarker(id) },
                                 onToggleMarkerCategory = { cat -> viewModel.toggleMarkerCategory(cat) },
-                                onShowAllMarkerCategories = { viewModel.showAllMarkers() }
+                                onShowAllMarkerCategories = { viewModel.showAllMarkers() },
+                                walkingRouteState = walkingRouteState,
+                                offlineRegions = offlineRegions,
+                                offlineDownloadProgress = offlineDownloadProgress,
+                                onStartWalkingToMarker = { marker -> viewModel.startWalkingToMarker(marker) },
+                                onStartWalkingToTrackStart = { id -> viewModel.startWalkingToTrackStart(id) },
+                                onStartWalkingToSearchPlace = { place -> viewModel.startWalkingToSearchPlace(place) },
+                                onStopWalkingNavigation = { viewModel.stopWalkingNavigation() },
+                                onDismissArrivalBanner = { viewModel.dismissArrivalBanner() },
+                                onSelectRoutingMode = { mode -> viewModel.setRoutingMode(mode) },
+                                onRetryWalkingRoute = { viewModel.retryWalkingRoute() },
+                                onDownloadOfflineArea = { name, lat, lon, radius ->
+                                    viewModel.downloadOfflineArea(name, lat, lon, radius, isDarkTheme)
+                                },
+                                onDeleteOfflineRegion = { region -> viewModel.deleteOfflineRegion(region) },
+                                onClearOfflineDownloadError = { viewModel.clearOfflineDownloadError() }
                             )
                         }
 
@@ -356,6 +381,10 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 },
                                 onHighlightOnMap = { routeId ->
                                     viewModel.highlightRouteOnMap(routeId)
+                                    navigateToTab(ROUTE_EXPLORE)
+                                },
+                                onWalkToRouteStart = { routeId ->
+                                    viewModel.startWalkingToTrackStart(routeId)
                                     navigateToTab(ROUTE_EXPLORE)
                                 },
                                 onDeleteRoute = { routeId -> viewModel.deleteRoute(routeId) }
@@ -377,6 +406,11 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onBack = { navController.popBackStack() },
                                 onShowOnExploreMap = { id ->
                                     viewModel.highlightRouteOnMap(id)
+                                    navController.popBackStack()
+                                    navigateToTab(ROUTE_EXPLORE)
+                                },
+                                onWalkToStart = { id ->
+                                    viewModel.startWalkingToTrackStart(id)
                                     navController.popBackStack()
                                     navigateToTab(ROUTE_EXPLORE)
                                 },
@@ -422,7 +456,17 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onToggleSectorLabels = { viewModel.setShowSectorLabels(it) },
                                 onToggleUiBlur = { viewModel.setUiBlurEnabled(it) },
                                 onToggleLocationOutline = { viewModel.setShowLocationOutline(it) },
-                                onSelectMarkerStyle = { viewModel.setMarkerStyle(it) }
+                                onSelectMarkerStyle = { viewModel.setMarkerStyle(it) },
+                                offlineRegions = offlineRegions,
+                                offlineDownloadProgress = offlineDownloadProgress,
+                                defaultDownloadLat = defaultDownloadCenter.first,
+                                defaultDownloadLon = defaultDownloadCenter.second,
+                                onSelectRoutingMode = { viewModel.setRoutingMode(it) },
+                                onDownloadOfflineArea = { name, lat, lon, radius ->
+                                    viewModel.downloadOfflineArea(name, lat, lon, radius, isDarkTheme)
+                                },
+                                onDeleteOfflineRegion = { region -> viewModel.deleteOfflineRegion(region) },
+                                onClearOfflineDownloadError = { viewModel.clearOfflineDownloadError() }
                             )
                         }
                     }
@@ -451,7 +495,7 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 }
                                 NavigationBar(
                                     containerColor = if (blurOn) {
-                                        Color.Transparent
+                                        ExpressiveTheme.colors.cardSurface.copy(alpha = 0.78f)
                                     } else {
                                         ExpressiveTheme.colors.cardSurface
                                     },

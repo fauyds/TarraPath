@@ -31,6 +31,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Apps
@@ -69,6 +70,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +82,7 @@ import com.example.R
 import com.example.data.local.ExploredChunkEntity
 import com.example.data.local.ExplorerStatsEntity
 import com.example.data.local.MapMarkerEntity
+import com.example.data.local.OfflineRegionEntity
 import com.example.data.local.RouteEntity
 import com.example.data.local.RoutePointEntity
 import com.example.data.model.ActiveRecordingState
@@ -91,7 +95,10 @@ import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MapPalette
 import com.example.data.model.MarkerCategory
 import com.example.data.model.MarkerStyle
+import com.example.data.model.OfflineDownloadProgress
+import com.example.data.model.RoutingMode
 import com.example.data.model.SearchPlaceResult
+import com.example.data.model.WalkingRouteState
 import com.example.domain.GeoGrid
 import com.example.ui.PendingRouteSummary
 import com.example.ui.components.ApplyDialogBlurIfEnabled
@@ -104,7 +111,9 @@ import com.example.ui.components.LocalBackdropHazeState
 import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.LocationSearchBarAndResults
 import com.example.ui.components.MarkerStylePreviewBadge
+import com.example.ui.components.OfflineAreasDialog
 import com.example.ui.components.SelectedSearchPlaceBanner
+import com.example.ui.components.WalkingNavigationHud
 import com.example.ui.components.applyBackdropBlur
 import com.example.ui.components.conditionalBlur
 import com.example.ui.components.isBackdropBlurActive
@@ -159,6 +168,19 @@ fun ExploreScreen(
     onDeleteMarker: (Long) -> Unit,
     onToggleMarkerCategory: (MarkerCategory) -> Unit,
     onShowAllMarkerCategories: () -> Unit,
+    walkingRouteState: WalkingRouteState = WalkingRouteState(),
+    offlineRegions: List<OfflineRegionEntity> = emptyList(),
+    offlineDownloadProgress: OfflineDownloadProgress = OfflineDownloadProgress(),
+    onStartWalkingToMarker: (MapMarkerEntity) -> Unit = {},
+    onStartWalkingToTrackStart: (Long) -> Unit = {},
+    onStartWalkingToSearchPlace: (SearchPlaceResult) -> Unit = {},
+    onStopWalkingNavigation: () -> Unit = {},
+    onDismissArrivalBanner: () -> Unit = {},
+    onSelectRoutingMode: (RoutingMode) -> Unit = {},
+    onRetryWalkingRoute: () -> Unit = {},
+    onDownloadOfflineArea: (name: String, lat: Double, lon: Double, radiusMeters: Int) -> Unit = { _, _, _, _ -> },
+    onDeleteOfflineRegion: (OfflineRegionEntity) -> Unit = {},
+    onClearOfflineDownloadError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val initialCenter = remember(telemetry.hasFix, exploredChunks.size, highlightedRoutePoints.size) {
@@ -188,6 +210,9 @@ fun ExploreScreen(
     var selectedMarker by remember { mutableStateOf<MapMarkerEntity?>(null) }
     var revealedMarkerId by remember { mutableStateOf<Long?>(null) }
     var revealSeq by remember { mutableLongStateOf(0L) }
+    var showOfflineAreasDialog by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+    var measuredBottomOverlayHeightDp by remember { mutableStateOf(104.dp) }
 
     LaunchedEffect(revealedMarkerId, revealSeq) {
         if (revealedMarkerId != null) {
@@ -214,8 +239,12 @@ fun ExploreScreen(
         highlightedRoutePoints.map { LatLonPoint(it.latitude, it.longitude, it.speedKmh, it.timestamp) }
     }
 
+    val walkingTargetPoint = remember(walkingRouteState.target) {
+        walkingRouteState.target?.let { LatLonPoint(it.targetLat, it.targetLon) }
+    }
+
     val blurMapBehindDialog = mapSettings.uiBlurEnabled && (
-        pendingRouteSummary != null || dropMarkerDraft != null || selectedMarker != null
+        pendingRouteSummary != null || dropMarkerDraft != null || selectedMarker != null || showOfflineAreasDialog
     )
     val hazeState = LocalBackdropHazeState.current
     val bottomOverlayPadding = LocalBottomOverlayPadding.current
@@ -236,6 +265,8 @@ fun ExploreScreen(
             activeRoutePoints = activeRecording.points,
             highlightedRoutePoints = highlightedLatLonPoints,
             highlightedRouteColor = highlightedRoute?.let { Color(it.colorArgb) },
+            walkingRoutePoints = walkingRouteState.routePoints,
+            walkingTargetPoint = walkingTargetPoint,
             markers = visibleMarkers,
             searchedPlace = selectedSearchPlace,
             telemetry = telemetry,
@@ -580,7 +611,22 @@ fun ExploreScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = onClearHighlightedRoute) {
+                        IconButton(
+                            onClick = { onStartWalkingToTrackStart(highlightedRoute.id) },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("walk_to_highlighted_route")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
+                                contentDescription = "Walk to route start",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(
+                            onClick = onClearHighlightedRoute,
+                            modifier = Modifier.size(48.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Filled.Close,
                                 contentDescription = "Clear highlighted route"
@@ -599,7 +645,7 @@ fun ExploreScreen(
                 .align(Alignment.BottomEnd)
                 .padding(
                     end = 16.dp,
-                    bottom = bottomOverlayPadding + if (selectedSearchPlace != null && !isSearchExpanded) 186.dp else 104.dp
+                    bottom = bottomOverlayPadding + maxOf(104.dp, measuredBottomOverlayHeightDp + 16.dp)
                 ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -670,7 +716,7 @@ fun ExploreScreen(
             )
         }
 
-        // Bottom Selected Place Banner + Live Route Recording Bar
+        // Bottom Walking HUD + Selected Place Banner + Live Route Recording Bar
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -680,10 +726,26 @@ fun ExploreScreen(
                     end = 16.dp,
                     top = 14.dp,
                     bottom = 14.dp + bottomOverlayPadding
-                ),
+                )
+                .onSizeChanged { sz ->
+                    measuredBottomOverlayHeightDp = with(density) { sz.height.toDp() }
+                },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (!isSearchExpanded && (walkingRouteState.target != null || walkingRouteState.arrivedBannerLabel != null)) {
+                WalkingNavigationHud(
+                    walkingState = walkingRouteState,
+                    activeMode = mapSettings.routingMode,
+                    telemetry = telemetry,
+                    onToggleMode = onSelectRoutingMode,
+                    onRetry = onRetryWalkingRoute,
+                    onOpenOfflineAreas = { showOfflineAreasDialog = true },
+                    onStop = onStopWalkingNavigation,
+                    onDismissArrival = onDismissArrivalBanner
+                )
+            }
+
             if (selectedSearchPlace != null && !isSearchExpanded) {
                 SelectedSearchPlaceBanner(
                     place = selectedSearchPlace,
@@ -701,6 +763,9 @@ fun ExploreScreen(
                             initialTitle = selectedSearchPlace.title,
                             initialCategory = selectedSearchPlace.markerCategory
                         )
+                    },
+                    onWalkHere = {
+                        onStartWalkingToSearchPlace(selectedSearchPlace)
                     },
                     onDismiss = onClearSelectedSearchPlace
                 )
@@ -761,6 +826,10 @@ fun ExploreScreen(
             marker = marker,
             telemetry = telemetry,
             markerStyle = mapSettings.markerStyle,
+            onWalkHere = {
+                onStartWalkingToMarker(marker)
+                selectedMarker = null
+            },
             onUpdateIcon = { chosenIcon ->
                 onUpdateMarkerIcon(marker, chosenIcon)
                 selectedMarker = marker.copy(iconName = chosenIcon)
@@ -774,6 +843,21 @@ fun ExploreScreen(
                 selectedMarker = null
             },
             onDismiss = { selectedMarker = null }
+        )
+    }
+
+    if (showOfflineAreasDialog) {
+        val targetCenterLat = if (telemetry.hasFix) telemetry.latitude else cameraLat
+        val targetCenterLon = if (telemetry.hasFix) telemetry.longitude else cameraLon
+        OfflineAreasDialog(
+            centerLat = targetCenterLat,
+            centerLon = targetCenterLon,
+            offlineRegions = offlineRegions,
+            downloadProgress = offlineDownloadProgress,
+            onDownloadArea = onDownloadOfflineArea,
+            onDeleteRegion = onDeleteOfflineRegion,
+            onClearError = onClearOfflineDownloadError,
+            onDismiss = { showOfflineAreasDialog = false }
         )
     }
 }
@@ -1292,6 +1376,7 @@ private fun MarkerDetailDialog(
     marker: MapMarkerEntity,
     telemetry: LocationTelemetry,
     markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON,
+    onWalkHere: () -> Unit = {},
     onUpdateIcon: (String) -> Unit,
     onUpdateColor: (Long) -> Unit,
     onDelete: () -> Unit,
@@ -1430,21 +1515,27 @@ private fun MarkerDetailDialog(
         },
         confirmButton = {
             ExpressivePillButton(
-                text = "Close",
-                onClick = onDismiss,
-                subtle = true
+                text = "Walk Here",
+                icon = Icons.AutoMirrored.Filled.DirectionsWalk,
+                onClick = onWalkHere,
+                modifier = Modifier.testTag("walk_to_marker_button")
             )
         },
         dismissButton = {
-            TextButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = "Delete marker",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Delete", color = MaterialTheme.colorScheme.error)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Delete marker",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
             }
         }
     )
@@ -1497,7 +1588,7 @@ private fun CoordinateStatusBar(
             tintColor = ExpressiveTheme.colors.cardSurface
         ),
         shape = coordPillShape,
-        color = if (backdropActive) Color.Transparent else ExpressiveTheme.colors.cardSurface,
+        color = if (blurOn) ExpressiveTheme.colors.cardSurface.copy(alpha = 0.78f) else ExpressiveTheme.colors.cardSurface,
         shadowElevation = if (blurOn) 0.dp else 3.dp,
         border = if (blurOn) {
             BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)

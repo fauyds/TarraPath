@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Directions
@@ -85,6 +86,7 @@ fun RoutesLibraryScreen(
     routes: List<RouteEntity>,
     onRouteClick: (Long) -> Unit,
     onHighlightOnMap: (Long) -> Unit,
+    onWalkToRouteStart: (Long) -> Unit = {},
     onDeleteRoute: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -329,7 +331,8 @@ fun RoutesLibraryScreen(
                                         onRouteClick(route.id)
                                     }
                                 },
-                                onHighlightOnMap = { onHighlightOnMap(route.id) }
+                                onHighlightOnMap = { onHighlightOnMap(route.id) },
+                                onWalkToStart = { onWalkToRouteStart(route.id) }
                             )
                         }
                     }
@@ -423,7 +426,8 @@ private fun RouteListRow(
     compareMode: Boolean,
     isSelectedForCompare: Boolean,
     onClick: () -> Unit,
-    onHighlightOnMap: () -> Unit
+    onHighlightOnMap: () -> Unit,
+    onWalkToStart: () -> Unit = {}
 ) {
     val dateFormatter = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
 
@@ -474,7 +478,22 @@ private fun RouteListRow(
             }
 
             if (!compareMode) {
-                IconButton(onClick = onHighlightOnMap) {
+                IconButton(
+                    onClick = onWalkToStart,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("walk_to_route_${route.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
+                        contentDescription = "Walk to route start",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(
+                    onClick = onHighlightOnMap,
+                    modifier = Modifier.size(48.dp)
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Map,
                         contentDescription = "Show route on map",
@@ -494,6 +513,7 @@ fun RouteDetailScreen(
     showGridLines: Boolean,
     onBack: () -> Unit,
     onShowOnExploreMap: (Long) -> Unit,
+    onWalkToStart: (Long) -> Unit = {},
     onDeleteRoute: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -634,27 +654,41 @@ fun RouteDetailScreen(
                 }
 
                 item {
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         ExpressivePillButton(
-                            text = "Show on Map",
-                            icon = Icons.Filled.Map,
-                            onClick = { onShowOnExploreMap(route.id) },
-                            modifier = Modifier.weight(1f)
+                            text = "Walk to Start",
+                            icon = Icons.AutoMirrored.Filled.DirectionsWalk,
+                            onClick = { onWalkToStart(route.id) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("detail_walk_to_start_button")
                         )
-                        ExpressivePillButton(
-                            text = "Delete",
-                            icon = Icons.Filled.Delete,
-                            onClick = {
-                                onDeleteRoute(route.id)
-                                onBack()
-                            },
-                            containerColorOverride = MaterialTheme.colorScheme.errorContainer,
-                            contentColorOverride = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ExpressivePillButton(
+                                text = "Show on Map",
+                                icon = Icons.Filled.Map,
+                                subtle = true,
+                                onClick = { onShowOnExploreMap(route.id) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            ExpressivePillButton(
+                                text = "Delete",
+                                icon = Icons.Filled.Delete,
+                                onClick = {
+                                    onDeleteRoute(route.id)
+                                    onBack()
+                                },
+                                containerColorOverride = MaterialTheme.colorScheme.errorContainer,
+                                contentColorOverride = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }

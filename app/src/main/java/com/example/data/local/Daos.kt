@@ -102,3 +102,18 @@ interface AchievementDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertStats(stats: ExplorerStatsEntity)
 }
+
+@Dao
+interface OfflineRegionDao {
+    @Query("SELECT * FROM offline_regions ORDER BY downloadedAt DESC")
+    fun observeAllRegions(): Flow<List<OfflineRegionEntity>>
+
+    @Query("SELECT * FROM offline_regions ORDER BY downloadedAt DESC")
+    suspend fun getAllRegionsOnce(): List<OfflineRegionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRegion(region: OfflineRegionEntity): Long
+
+    @Query("DELETE FROM offline_regions WHERE id = :regionId")
+    suspend fun deleteRegionById(regionId: Long)
+}

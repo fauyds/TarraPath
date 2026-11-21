@@ -7,6 +7,7 @@ import com.example.AppContainer
 import com.example.data.local.ExploredChunkEntity
 import com.example.data.local.ExplorerStatsEntity
 import com.example.data.local.MapMarkerEntity
+import com.example.data.local.OfflineRegionEntity
 import com.example.data.local.RouteEntity
 import com.example.data.local.RoutePointEntity
 import com.example.data.model.AchievementCatalog
@@ -22,11 +23,17 @@ import com.example.data.model.LocationTelemetry
 import com.example.data.model.MapDisplaySettings
 import com.example.data.model.MarkerCategory
 import com.example.data.model.MarkerStyle
+import com.example.data.model.OfflineDownloadProgress
+import com.example.data.model.RoutingMode
 import com.example.data.model.SearchPlaceResult
 import com.example.data.model.ThemeMode
+import com.example.data.model.WalkTarget
+import com.example.data.model.WalkingRouteState
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.remote.ApiKeyRejectedException
 import com.example.data.remote.LocationSearchService
+import com.example.data.remote.WalkingRouteService
+import com.example.data.repository.OfflineRegionManager
 import com.example.data.repository.TerraRepository
 import com.example.data.sensors.CompassHeadingTracker
 import com.example.data.sensors.HeadingEstimator
@@ -34,6 +41,8 @@ import com.example.data.sensors.LocationTracker
 import com.example.data.sensors.StepSensorEvent
 import com.example.data.sensors.StepSensorTracker
 import com.example.domain.GeoGrid
+import com.example.domain.OfflineRoadGraph
+import com.example.domain.WalkingNavigationPolicy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,7 +76,9 @@ class TerraViewModel(
     private val locationTracker: LocationTracker,
     private val stepSensorTracker: StepSensorTracker,
     private val locationSearchService: LocationSearchService = LocationSearchService(),
-    private val compassHeadingTracker: CompassHeadingTracker? = null
+    private val compassHeadingTracker: CompassHeadingTracker? = null,
+    private val walkingRouteService: WalkingRouteService = WalkingRouteService(),
+    private val offlineRegionManager: OfflineRegionManager? = null
 ) : ViewModel() {
 
     private val _hasLocationPermission = MutableStateFlow(false)
@@ -96,6 +107,16 @@ class TerraViewModel(
 
     private val _apiKeyTestState = MutableStateFlow<ApiKeyTestState>(ApiKeyTestState.Idle)
     val apiKeyTestState: StateFlow<ApiKeyTestState> = _apiKeyTestState.asStateFlow()
+
+    private val _walkingRouteState = MutableStateFlow(WalkingRouteState())
+    val walkingRouteState: StateFlow<WalkingRouteState> = _walkingRouteState.asStateFlow()
+
+    val offlineRegions: StateFlow<List<OfflineRegionEntity>> =
+        (offlineRegionManager?.allRegions ?: flowOf(emptyList()))
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val offlineDownloadProgress: StateFlow<OfflineDownloadProgress> =
+        offlineRegionManager?.downloadProgress ?: MutableStateFlow(OfflineDownloadProgress())
 
     val highlightedRoutePoints: StateFlow<List<RoutePointEntity>> = _highlightedRouteId
         .flatMapLatest { routeId ->
@@ -195,6 +216,9 @@ class TerraViewModel(
     private var stepJob: Job? = null
     private var timerJob: Job? = null
     private var searchJob: Job? = null
+    private var walkingRouteJob: Job? = null
+    private var arrivalBannerJob: Job? = null
+    private var fullCalculatedWalkPoints: List<LatLonPoint> = emptyList()
     private var lastRecordedTelemetry: LocationTelemetry? = null
 
     init {
@@ -280,6 +304,8 @@ class TerraViewModel(
             }
         }
         lastRecordedTelemetry = telemetry
+
+        updateWalkingRouteOnGpsFix(telemetry)
 
         if (_activeRecording.value.isRecording) {
             _activeRecording.update { state ->
@@ -462,12 +488,283 @@ class TerraViewModel(
 
     fun highlightRouteOnMap(routeId: Long?) {
         _highlightedRouteId.value = routeId
+        if (routeId == null) {
+            if (_walkingRouteState.value.target is WalkTarget.SavedTrackStart) {
+                stopWalkingNavigation()
+            }
+        } else {
+            viewModelScope.launch {
+                val points = repository.getRoutePointsOnce(routeId)
+                val firstPt = points.firstOrNull() ?: return@launch
+                val gps = _locationTelemetry.value
+                if (gps.hasFix && !WalkingNavigationPolicy.hasArrivedAtStart(
+                        gps.latitude,
+                        gps.longitude,
+                        firstPt.latitude,
+                        firstPt.longitude
+                    )
+                ) {
+                    val routeName = allRoutes.value.firstOrNull { it.id == routeId }?.name ?: "Saved Track"
+                    activateWalkTarget(
+                        WalkTarget.SavedTrackStart(
+                            routeId = routeId,
+                            label = "$routeName Start",
+                            targetLat = firstPt.latitude,
+                            targetLon = firstPt.longitude
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun startWalkingToMarker(marker: MapMarkerEntity) {
+        activateWalkTarget(
+            WalkTarget.SavedPoint(
+                markerId = marker.id,
+                label = marker.title,
+                targetLat = marker.latitude,
+                targetLon = marker.longitude
+            )
+        )
+    }
+
+    fun startWalkingToTrackStart(routeId: Long) {
+        _highlightedRouteId.value = routeId
+        viewModelScope.launch {
+            val points = repository.getRoutePointsOnce(routeId)
+            val firstPt = points.firstOrNull() ?: return@launch
+            val routeName = allRoutes.value.firstOrNull { it.id == routeId }?.name ?: "Saved Track"
+            activateWalkTarget(
+                WalkTarget.SavedTrackStart(
+                    routeId = routeId,
+                    label = "$routeName Start",
+                    targetLat = firstPt.latitude,
+                    targetLon = firstPt.longitude
+                )
+            )
+        }
+    }
+
+    fun startWalkingToSearchPlace(place: SearchPlaceResult) {
+        activateWalkTarget(
+            WalkTarget.SearchedPlace(
+                placeId = place.id,
+                label = place.title,
+                targetLat = place.latitude,
+                targetLon = place.longitude
+            )
+        )
+    }
+
+    fun stopWalkingNavigation() {
+        walkingRouteJob?.cancel()
+        fullCalculatedWalkPoints = emptyList()
+        _walkingRouteState.value = WalkingRouteState()
+    }
+
+    fun dismissArrivalBanner() {
+        arrivalBannerJob?.cancel()
+        _walkingRouteState.update { it.copy(arrivedBannerLabel = null) }
+    }
+
+    private fun activateWalkTarget(target: WalkTarget) {
+        arrivalBannerJob?.cancel()
+        walkingRouteJob?.cancel()
+        fullCalculatedWalkPoints = emptyList()
+
+        val gps = _locationTelemetry.value
+        val mode = mapDisplaySettings.value.routingMode
+        if (gps.hasFix && WalkingNavigationPolicy.hasArrivedAtStart(
+                gps.latitude,
+                gps.longitude,
+                target.targetLat,
+                target.targetLon
+            )
+        ) {
+            triggerArrivedClear(target.label)
+            return
+        }
+
+        val initialDist = if (gps.hasFix) {
+            GeoGrid.haversineMeters(gps.latitude, gps.longitude, target.targetLat, target.targetLon)
+        } else 0.0
+
+        _walkingRouteState.value = WalkingRouteState(
+            target = target,
+            remainingDistanceMeters = initialDist,
+            routeDistanceMeters = initialDist,
+            estimatedWalkSeconds = (initialDist / OfflineRoadGraph.WALKING_SPEED_MPS).toLong(),
+            modeUsed = mode,
+            errorMessage = if (!gps.hasFix) "Waiting for GPS fix…" else null
+        )
+
+        if (gps.hasFix) {
+            requestWalkingRouteCalculation(gps.latitude, gps.longitude, target, mode)
+        }
+    }
+
+    private fun updateWalkingRouteOnGpsFix(telemetry: LocationTelemetry) {
+        val state = _walkingRouteState.value
+        val target = state.target ?: return
+        if (!telemetry.hasFix) return
+
+        if (WalkingNavigationPolicy.hasArrivedAtStart(
+                telemetry.latitude,
+                telemetry.longitude,
+                target.targetLat,
+                target.targetLon
+            )
+        ) {
+            triggerArrivedClear(target.label)
+            return
+        }
+
+        val sourcePoints = if (fullCalculatedWalkPoints.size >= 2) fullCalculatedWalkPoints else state.routePoints
+        val (remaining, trimmed) = WalkingNavigationPolicy.computeRemainingAndTrimmedRoute(
+            currentLat = telemetry.latitude,
+            currentLon = telemetry.longitude,
+            routePoints = sourcePoints,
+            targetLat = target.targetLat,
+            targetLon = target.targetLon
+        )
+        _walkingRouteState.update { cur ->
+            if (cur.target != target) cur
+            else cur.copy(
+                routePoints = if (fullCalculatedWalkPoints.size >= 2) trimmed else cur.routePoints,
+                remainingDistanceMeters = remaining,
+                estimatedWalkSeconds = (remaining / OfflineRoadGraph.WALKING_SPEED_MPS).toLong().coerceAtLeast(1L)
+            )
+        }
+
+        val activeMode = mapDisplaySettings.value.routingMode
+        val now = System.currentTimeMillis()
+        if (WalkingNavigationPolicy.shouldRecalculateRoute(
+                state = _walkingRouteState.value,
+                currentLat = telemetry.latitude,
+                currentLon = telemetry.longitude,
+                activeMode = activeMode,
+                nowMillis = now
+            )
+        ) {
+            requestWalkingRouteCalculation(telemetry.latitude, telemetry.longitude, target, activeMode)
+        }
+    }
+
+    private fun triggerArrivedClear(label: String) {
+        walkingRouteJob?.cancel()
+        fullCalculatedWalkPoints = emptyList()
+        _walkingRouteState.value = WalkingRouteState(
+            arrivedBannerLabel = "Arrived near $label"
+        )
+        arrivalBannerJob?.cancel()
+        arrivalBannerJob = viewModelScope.launch {
+            delay(4000L)
+            _walkingRouteState.update { it.copy(arrivedBannerLabel = null) }
+        }
+    }
+
+    private fun requestWalkingRouteCalculation(
+        startLat: Double,
+        startLon: Double,
+        target: WalkTarget,
+        mode: RoutingMode
+    ) {
+        walkingRouteJob?.cancel()
+        val requestTime = System.currentTimeMillis()
+        _walkingRouteState.update {
+            it.copy(
+                isCalculating = true,
+                modeUsed = mode,
+                errorMessage = null
+            )
+        }
+        walkingRouteJob = viewModelScope.launch {
+            val result = when (mode) {
+                RoutingMode.ONLINE -> walkingRouteService.calculateOnlineWalkingRoute(
+                    startLat = startLat,
+                    startLon = startLon,
+                    endLat = target.targetLat,
+                    endLon = target.targetLon,
+                    apiKey = apiKey.value,
+                    apiProvider = apiProvider.value
+                )
+                RoutingMode.OFFLINE -> offlineRegionManager?.calculateOfflineWalkingRoute(
+                    startLat = startLat,
+                    startLon = startLon,
+                    endLat = target.targetLat,
+                    endLon = target.targetLon
+                ) ?: Result.failure(IllegalStateException("Offline routing storage unavailable"))
+            }
+
+            result.onSuccess { outcome ->
+                fullCalculatedWalkPoints = outcome.points
+                val latestGps = _locationTelemetry.value
+                val (remaining, trimmed) = if (latestGps.hasFix) {
+                    WalkingNavigationPolicy.computeRemainingAndTrimmedRoute(
+                        currentLat = latestGps.latitude,
+                        currentLon = latestGps.longitude,
+                        routePoints = outcome.points,
+                        targetLat = target.targetLat,
+                        targetLon = target.targetLon
+                    )
+                } else {
+                    outcome.distanceMeters to outcome.points
+                }
+
+                if (latestGps.hasFix && WalkingNavigationPolicy.hasArrivedAtStart(
+                        latestGps.latitude,
+                        latestGps.longitude,
+                        target.targetLat,
+                        target.targetLon
+                    )
+                ) {
+                    triggerArrivedClear(target.label)
+                    return@onSuccess
+                }
+
+                _walkingRouteState.update { cur ->
+                    if (cur.target != target) cur
+                    else cur.copy(
+                        routePoints = trimmed,
+                        routeDistanceMeters = outcome.distanceMeters,
+                        remainingDistanceMeters = remaining,
+                        estimatedWalkSeconds = (remaining / OfflineRoadGraph.WALKING_SPEED_MPS)
+                            .toLong()
+                            .coerceAtLeast(1L),
+                        isCalculating = false,
+                        modeUsed = mode,
+                        providerLabel = outcome.providerLabel,
+                        errorMessage = null,
+                        lastRoutedLat = startLat,
+                        lastRoutedLon = startLon,
+                        lastRoutedAtMillis = requestTime
+                    )
+                }
+            }.onFailure { err ->
+                _walkingRouteState.update { cur ->
+                    if (cur.target != target) cur
+                    else cur.copy(
+                        isCalculating = false,
+                        modeUsed = mode,
+                        errorMessage = err.localizedMessage ?: "Unable to calculate walking route",
+                        lastRoutedLat = startLat,
+                        lastRoutedLon = startLon,
+                        lastRoutedAtMillis = requestTime
+                    )
+                }
+            }
+        }
     }
 
     fun deleteRoute(routeId: Long) {
         viewModelScope.launch {
             if (_highlightedRouteId.value == routeId) {
                 _highlightedRouteId.value = null
+            }
+            val activeTarget = _walkingRouteState.value.target
+            if (activeTarget is WalkTarget.SavedTrackStart && activeTarget.routeId == routeId) {
+                stopWalkingNavigation()
             }
             repository.deleteRoute(routeId)
         }
@@ -504,6 +801,10 @@ class TerraViewModel(
 
     fun deleteMarker(markerId: Long) {
         viewModelScope.launch {
+            val activeTarget = _walkingRouteState.value.target
+            if (activeTarget is WalkTarget.SavedPoint && activeTarget.markerId == markerId) {
+                stopWalkingNavigation()
+            }
             repository.deleteMarker(markerId)
         }
     }
@@ -609,6 +910,69 @@ class TerraViewModel(
 
     fun setMarkerStyle(style: MarkerStyle) {
         viewModelScope.launch { preferences.setMarkerStyle(style) }
+    }
+
+    fun setRoutingMode(mode: RoutingMode) {
+        viewModelScope.launch {
+            preferences.setRoutingMode(mode)
+            val target = _walkingRouteState.value.target
+            val gps = _locationTelemetry.value
+            if (target != null && gps.hasFix) {
+                requestWalkingRouteCalculation(gps.latitude, gps.longitude, target, mode)
+            }
+        }
+    }
+
+    fun retryWalkingRoute() {
+        val target = _walkingRouteState.value.target ?: return
+        val gps = _locationTelemetry.value
+        if (gps.hasFix) {
+            requestWalkingRouteCalculation(
+                gps.latitude,
+                gps.longitude,
+                target,
+                mapDisplaySettings.value.routingMode
+            )
+        }
+    }
+
+    fun downloadOfflineArea(
+        regionName: String,
+        centerLat: Double,
+        centerLon: Double,
+        radiusMeters: Int,
+        isDarkTheme: Boolean
+    ) {
+        val manager = offlineRegionManager ?: return
+        viewModelScope.launch {
+            val res = manager.downloadOfflineArea(
+                regionName = regionName,
+                centerLat = centerLat,
+                centerLon = centerLon,
+                radiusMeters = radiusMeters,
+                isDarkTheme = isDarkTheme,
+                showStreetNames = mapDisplaySettings.value.showStreetNames,
+                apiKey = apiKey.value,
+                apiProvider = apiProvider.value
+            )
+            if (res.isSuccess) {
+                val target = _walkingRouteState.value.target
+                val gps = _locationTelemetry.value
+                if (target != null && gps.hasFix && mapDisplaySettings.value.routingMode == RoutingMode.OFFLINE) {
+                    requestWalkingRouteCalculation(gps.latitude, gps.longitude, target, RoutingMode.OFFLINE)
+                }
+            }
+        }
+    }
+
+    fun deleteOfflineRegion(region: OfflineRegionEntity) {
+        viewModelScope.launch {
+            offlineRegionManager?.deleteRegion(region)
+        }
+    }
+
+    fun clearOfflineDownloadError() {
+        offlineRegionManager?.clearDownloadError()
     }
 
     fun onSearchQueryChanged(query: String, biasLat: Double? = null, biasLon: Double? = null) {
@@ -759,7 +1123,9 @@ class TerraViewModel(
                 locationTracker = container.locationTracker,
                 stepSensorTracker = container.stepSensorTracker,
                 locationSearchService = container.locationSearchService,
-                compassHeadingTracker = container.compassHeadingTracker
+                compassHeadingTracker = container.compassHeadingTracker,
+                walkingRouteService = container.walkingRouteService,
+                offlineRegionManager = container.offlineRegionManager
             ) as T
         }
     }
