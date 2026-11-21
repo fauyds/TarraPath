@@ -127,58 +127,81 @@ class LocationTracker(context: Context) {
 
         trySend(LocationTelemetry(hasFix = false, hasPermission = true))
 
+        val driftFilter = GpsDriftFilter()
         var previousSample: SpeedFixSample? = null
         var smoothedSpeedKmh = 0f
         var lastValidBearingDeg: Float? = null
         var lastFixReceivedRealtimeMs = 0L
         var lastEmittedTelemetry: LocationTelemetry? = null
 
-        fun Location.toSample(): SpeedFixSample {
-            val elapsedMs = if (elapsedRealtimeNanos > 0L) {
-                elapsedRealtimeNanos / 1_000_000L
-            } else {
-                SystemClock.elapsedRealtime()
-            }
-            val speedMps = if (hasSpeed() && !speed.isNaN() && speed >= 0f) speed else null
-            val speedAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && hasSpeedAccuracy()) {
-                speedAccuracyMetersPerSecond
-            } else {
-                null
-            }
-            return SpeedFixSample(
-                latitude = latitude,
-                longitude = longitude,
-                accuracyMeters = accuracy,
-                reportedSpeedMps = speedMps,
-                speedAccuracyMps = speedAcc,
-                elapsedRealtimeMs = elapsedMs
-            )
+        fun Location.toElapsedMs(): Long = if (elapsedRealtimeNanos > 0L) {
+            elapsedRealtimeNanos / 1_000_000L
+        } else {
+            SystemClock.elapsedRealtime()
         }
 
         fun emitLocation(location: Location, isCached: Boolean) {
             // Do not let an old cached fix overwrite a live GPS update
             if (isCached && previousSample != null) return
 
-            val sample = location.toSample()
+            val elapsedMs = location.toElapsedMs()
             val prev = previousSample
-            if (prev != null && sample.elapsedRealtimeMs < prev.elapsedRealtimeMs) return
+            if (prev != null && elapsedMs < prev.elapsedRealtimeMs) return
+
+            val speedMps = if (location.hasSpeed() && !location.speed.isNaN() && location.speed >= 0f) {
+                location.speed
+            } else {
+                null
+            }
+            val speedAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && location.hasSpeedAccuracy()) {
+                location.speedAccuracyMetersPerSecond
+            } else {
+                null
+            }
+            val rawBearing = if (location.hasBearing() && !location.bearing.isNaN()) {
+                location.bearing
+            } else {
+                null
+            }
+            val wallTime = if (location.time > 0L) location.time else System.currentTimeMillis()
+
+            val filtered = driftFilter.process(
+                RawGpsFix(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    accuracyMeters = location.accuracy,
+                    reportedSpeedMps = speedMps,
+                    speedAccuracyMps = speedAcc,
+                    bearingDegrees = rawBearing,
+                    elapsedRealtimeMs = elapsedMs,
+                    wallTimeMs = wallTime,
+                    isCached = isCached
+                )
+            ) ?: return
+
+            val filteredSample = SpeedFixSample(
+                latitude = filtered.latitude,
+                longitude = filtered.longitude,
+                accuracyMeters = filtered.accuracyMeters,
+                reportedSpeedMps = speedMps,
+                speedAccuracyMps = speedAcc,
+                elapsedRealtimeMs = elapsedMs
+            )
 
             val isStaleCached = isCached &&
-                (SystemClock.elapsedRealtime() - sample.elapsedRealtimeMs) > 5_000L
+                (SystemClock.elapsedRealtime() - elapsedMs) > 5_000L
 
-            smoothedSpeedKmh = if (isStaleCached) {
-                0f
+            if (isStaleCached || !filtered.acceptedForMovement) {
+                smoothedSpeedKmh = 0f
             } else {
-                SpeedEstimator.computeSpeedKmh(
-                    current = sample,
+                smoothedSpeedKmh = SpeedEstimator.computeSpeedKmh(
+                    current = filteredSample,
                     previous = prev,
                     previousSmoothedKmh = smoothedSpeedKmh
                 )
-            }
 
-            if (!isStaleCached) {
-                val hardwareBearing = if (location.hasBearing() && !location.bearing.isNaN() && smoothedSpeedKmh >= 2.0f) {
-                    HeadingEstimator.normalizeDegrees(location.bearing)
+                val hardwareBearing = if (rawBearing != null && smoothedSpeedKmh >= 2.0f) {
+                    HeadingEstimator.normalizeDegrees(rawBearing)
                 } else {
                     null
                 }
@@ -186,8 +209,8 @@ class LocationTracker(context: Context) {
                     HeadingEstimator.computeCourseBearingDegrees(
                         prevLat = prev.latitude,
                         prevLon = prev.longitude,
-                        curLat = sample.latitude,
-                        curLon = sample.longitude
+                        curLat = filteredSample.latitude,
+                        curLon = filteredSample.longitude
                     )
                 } else {
                     null
@@ -200,17 +223,19 @@ class LocationTracker(context: Context) {
                         alpha = 0.45f
                     )
                 }
+                previousSample = filteredSample
             }
 
-            previousSample = sample
+            if (previousSample == null) {
+                previousSample = filteredSample
+            }
             lastFixReceivedRealtimeMs = SystemClock.elapsedRealtime()
 
-            val wallTime = if (location.time > 0L) location.time else System.currentTimeMillis()
             val telemetry = LocationTelemetry(
-                latitude = location.latitude,
-                longitude = location.longitude,
+                latitude = filtered.latitude,
+                longitude = filtered.longitude,
                 speedKmh = smoothedSpeedKmh,
-                accuracyMeters = location.accuracy,
+                accuracyMeters = filtered.accuracyMeters,
                 bearingDegrees = lastValidBearingDeg,
                 headingDegrees = lastValidBearingDeg,
                 hasFix = true,

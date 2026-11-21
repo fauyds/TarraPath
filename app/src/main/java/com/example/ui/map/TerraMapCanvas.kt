@@ -2,9 +2,7 @@ package com.example.ui.map
 
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.ColorMatrixColorFilter
-import android.graphics.DashPathEffect
 import android.graphics.Paint
-import android.graphics.PathEffect
 import android.graphics.Path as AndroidPath
 import android.graphics.Point
 import android.graphics.RectF
@@ -516,21 +514,15 @@ private class TerraOsmOverlay(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
-    private val walkDotEffect: PathEffect = DashPathEffect(
-        floatArrayOf(1f, 14f * density),
-        0f
-    )
     private val walkCasingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        pathEffect = walkDotEffect
     }
     private val walkStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-        pathEffect = walkDotEffect
     }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -1070,21 +1062,63 @@ private class TerraOsmOverlay(
         targetPoint: LatLonPoint?
     ) {
         val proj = mapView.projection
+        val screenXs = FloatArray(points.size)
+        val screenYs = FloatArray(points.size)
         reusablePath.reset()
         points.forEachIndexed { idx, pt ->
             proj.toPixels(GeoPoint(pt.latitude, pt.longitude), tmpPt1)
-            if (idx == 0) reusablePath.moveTo(tmpPt1.x.toFloat(), tmpPt1.y.toFloat())
-            else reusablePath.lineTo(tmpPt1.x.toFloat(), tmpPt1.y.toFloat())
+            val sx = tmpPt1.x.toFloat()
+            val sy = tmpPt1.y.toFloat()
+            screenXs[idx] = sx
+            screenYs[idx] = sy
+            if (idx == 0) reusablePath.moveTo(sx, sy)
+            else reusablePath.lineTo(sx, sy)
         }
 
-        val walkColor = 0xFF0EA5E9.toInt() // Crisp navigation sky-blue dots
-        walkCasingPaint.color = if (isDarkTheme) 0xE60F172A.toInt() else android.graphics.Color.WHITE
-        walkCasingPaint.strokeWidth = 9.5f * density
+        val walkColor = 0xFF0EA5E9.toInt() // Crisp navigation sky-blue
+        val walkCoreColor = 0xFF0284C7.toInt()
+        val casingColor = if (isDarkTheme) 0xE60F172A.toInt() else android.graphics.Color.WHITE
+
+        // Continuous casing + vivid pedestrian route ribbon (immune to HWUI DashPathEffect quirks)
+        walkCasingPaint.color = casingColor
+        walkCasingPaint.strokeWidth = 8.5f * density
         canvas.drawPath(reusablePath, walkCasingPaint)
 
         walkStrokePaint.color = walkColor
-        walkStrokePaint.strokeWidth = 6f * density
+        walkStrokePaint.strokeWidth = 5f * density
         canvas.drawPath(reusablePath, walkStrokePaint)
+
+        // Crisp walking breadcrumb dots spaced evenly in screen pixels along the route
+        val stepPx = 18f * density
+        val dotOuterR = 3.6f * density
+        val dotInnerR = 2.2f * density
+        var distAccum = stepPx * 0.5f
+        var dotsDrawn = 0
+        for (i in 1 until points.size) {
+            if (dotsDrawn >= 240) break
+            val x1 = screenXs[i - 1]
+            val y1 = screenYs[i - 1]
+            val x2 = screenXs[i]
+            val y2 = screenYs[i]
+            val segLen = hypot(x2 - x1, y2 - y1)
+            if (segLen < 0.5f) continue
+            val ux = (x2 - x1) / segLen
+            val uy = (y2 - y1) / segLen
+            var pos = distAccum
+            while (pos < segLen && dotsDrawn < 240) {
+                val px = x1 + ux * pos
+                val py = y1 + uy * pos
+                if (px >= -20f && px <= mapView.width + 20f && py >= -20f && py <= mapView.height + 20f) {
+                    fillPaint.color = casingColor
+                    canvas.drawCircle(px, py, dotOuterR, fillPaint)
+                    fillPaint.color = walkCoreColor
+                    canvas.drawCircle(px, py, dotInnerR, fillPaint)
+                    dotsDrawn++
+                }
+                pos += stepPx
+            }
+            distAccum = pos - segLen
+        }
 
         val endPt = targetPoint ?: points.last()
         proj.toPixels(GeoPoint(endPt.latitude, endPt.longitude), tmpPt2)

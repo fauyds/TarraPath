@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Explore
@@ -113,6 +115,7 @@ import com.example.ui.components.LocationSearchBarAndResults
 import com.example.ui.components.MarkerStylePreviewBadge
 import com.example.ui.components.OfflineAreasDialog
 import com.example.ui.components.SelectedSearchPlaceBanner
+import com.example.ui.components.WalkingModeBadge
 import com.example.ui.components.WalkingNavigationHud
 import com.example.ui.components.applyBackdropBlur
 import com.example.ui.components.conditionalBlur
@@ -174,6 +177,7 @@ fun ExploreScreen(
     onStartWalkingToMarker: (MapMarkerEntity) -> Unit = {},
     onStartWalkingToTrackStart: (Long) -> Unit = {},
     onStartWalkingToSearchPlace: (SearchPlaceResult) -> Unit = {},
+    onStartWalkingToCoordinate: (label: String, lat: Double, lon: Double) -> Unit = { _, _, _ -> },
     onStopWalkingNavigation: () -> Unit = {},
     onDismissArrivalBanner: () -> Unit = {},
     onSelectRoutingMode: (RoutingMode) -> Unit = {},
@@ -297,10 +301,13 @@ fun ExploreScreen(
                         Modifier
                     }
                 )
-                .conditionalBlur(enabled = blurMapBehindDialog, radius = 12.dp)
+                .conditionalBlur(
+                    enabled = blurMapBehindDialog,
+                    radius = (mapSettings.uiBlurRadiusDp * 0.5f).coerceIn(2f, 20f).dp
+                )
         )
 
-        // Top HUD: Coordinate Bar (top-left) + Location Search Bar + District exploration stats + Marker category filter
+        // Top HUD: Location Search Bar + District exploration stats + Coordinate Bar (left) + Marker category filter
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -310,24 +317,6 @@ fun ExploreScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            AnimatedVisibility(
-                visible = !isSearchExpanded,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    CoordinateStatusBar(
-                        telemetry = telemetry,
-                        mapSettings = mapSettings,
-                        apiProvider = apiProvider,
-                        apiKey = apiKey,
-                        modifier = Modifier.testTag("coordinate_bar")
-                    )
-                }
-            }
-
             LocationSearchBarAndResults(
                 searchState = locationSearchState,
                 isExpanded = isSearchExpanded,
@@ -475,6 +464,22 @@ fun ExploreScreen(
                         }
                     }
                 }
+            }
+
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+            ) {
+                CoordinateStatusBar(
+                    telemetry = telemetry,
+                    mapSettings = mapSettings,
+                    apiProvider = apiProvider,
+                    apiKey = apiKey,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .testTag("coordinate_bar")
+                )
             }
 
             AnimatedVisibility(visible = showFilterStrip) {
@@ -640,12 +645,17 @@ fun ExploreScreen(
         }
 
         // Right-side Map Controls (48dp touch targets)
+        val isWalkingCardVisible = !isSearchExpanded &&
+            (walkingRouteState.target != null || walkingRouteState.arrivedBannerLabel != null)
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(
                     end = 16.dp,
-                    bottom = bottomOverlayPadding + maxOf(104.dp, measuredBottomOverlayHeightDp + 16.dp)
+                    bottom = bottomOverlayPadding + maxOf(
+                        104.dp,
+                        measuredBottomOverlayHeightDp + if (isWalkingCardVisible) 38.dp else 18.dp
+                    )
                 ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -716,7 +726,7 @@ fun ExploreScreen(
             )
         }
 
-        // Bottom Walking HUD + Selected Place Banner + Live Route Recording Bar
+        // Bottom Selected Place Banner + Active Recording Dock + Walking HUD + Bottom Mode/Start Row
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -733,19 +743,6 @@ fun ExploreScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            if (!isSearchExpanded && (walkingRouteState.target != null || walkingRouteState.arrivedBannerLabel != null)) {
-                WalkingNavigationHud(
-                    walkingState = walkingRouteState,
-                    activeMode = mapSettings.routingMode,
-                    telemetry = telemetry,
-                    onToggleMode = onSelectRoutingMode,
-                    onRetry = onRetryWalkingRoute,
-                    onOpenOfflineAreas = { showOfflineAreasDialog = true },
-                    onStop = onStopWalkingNavigation,
-                    onDismissArrival = onDismissArrivalBanner
-                )
-            }
-
             if (selectedSearchPlace != null && !isSearchExpanded) {
                 SelectedSearchPlaceBanner(
                     place = selectedSearchPlace,
@@ -771,26 +768,57 @@ fun ExploreScreen(
                 )
             }
 
-            if (!activeRecording.isRecording) {
-                Row(
-                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ExpressivePillButton(
-                        text = "Start Route",
-                        icon = Icons.Filled.PlayArrow,
-                        onClick = onStartRoute,
-                        modifier = Modifier.testTag("start_route_button")
-                    )
-                }
-            } else {
+            if (activeRecording.isRecording) {
                 ActiveRecordingDock(
                     recording = activeRecording,
                     currentSpeedKmh = telemetry.speedKmh,
                     onStopClick = onStopRoute,
                     modifier = Modifier.widthIn(max = 560.dp)
                 )
+            }
+
+            val showWalkingHud = !isSearchExpanded &&
+                (walkingRouteState.target != null || walkingRouteState.arrivedBannerLabel != null)
+            val showActiveWalkModeBadge = !isSearchExpanded && walkingRouteState.target != null
+
+            if (showWalkingHud) {
+                WalkingNavigationHud(
+                    walkingState = walkingRouteState,
+                    activeMode = mapSettings.routingMode,
+                    telemetry = telemetry,
+                    onToggleMode = onSelectRoutingMode,
+                    onRetry = onRetryWalkingRoute,
+                    onOpenOfflineAreas = { showOfflineAreasDialog = true },
+                    onStop = onStopWalkingNavigation,
+                    onDismissArrival = onDismissArrivalBanner,
+                    showModeBadge = false
+                )
+            }
+
+            if (showActiveWalkModeBadge || !activeRecording.isRecording) {
+                Row(
+                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (showActiveWalkModeBadge) {
+                        WalkingModeBadge(
+                            activeMode = mapSettings.routingMode,
+                            onToggleMode = onSelectRoutingMode
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.width(1.dp))
+                    }
+
+                    if (!activeRecording.isRecording) {
+                        ExpressivePillButton(
+                            text = "Start Route",
+                            icon = Icons.Filled.PlayArrow,
+                            onClick = onStartRoute,
+                            modifier = Modifier.testTag("start_route_button")
+                        )
+                    }
+                }
             }
         }
     }
@@ -812,6 +840,10 @@ fun ExploreScreen(
             initialTitle = draft.initialTitle,
             initialCategory = draft.initialCategory,
             markerStyle = mapSettings.markerStyle,
+            onWalkHere = { label ->
+                onStartWalkingToCoordinate(label, draft.latitude, draft.longitude)
+                dropMarkerDraft = null
+            },
             onConfirm = { title, note, category, colorArgb, iconName ->
                 onAddMarker(title, note, category, draft.latitude, draft.longitude, colorArgb, iconName)
                 dropMarkerDraft = null
@@ -877,7 +909,7 @@ private fun MapControlCircleButton(
     Surface(
         modifier = Modifier
             .size(48.dp)
-            .applyBackdropBlur(shape = CircleShape, tintColor = containerColor, blurRadius = 18.dp)
+            .applyBackdropBlur(shape = CircleShape, tintColor = containerColor)
             .clip(CircleShape)
             .clickable(onClick = onClick)
             .then(if (testTag.isNotEmpty()) Modifier.testTag(testTag) else Modifier),
@@ -1123,6 +1155,7 @@ private fun DropMarkerDialog(
     initialTitle: String? = null,
     initialCategory: MarkerCategory? = null,
     markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON,
+    onWalkHere: (label: String) -> Unit = {},
     onConfirm: (title: String, note: String, category: MarkerCategory, colorArgb: Long, iconName: String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1152,7 +1185,10 @@ private fun DropMarkerDialog(
             Text("Drop Custom Marker", style = MaterialTheme.typography.headlineMedium)
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
                     text = String.format("Location: %.5f, %.5f", latitude, longitude),
                     style = TelemetryTextStyle.copy(fontSize = 11.sp),
@@ -1161,64 +1197,78 @@ private fun DropMarkerDialog(
 
                 Text("Quick Markers", style = MaterialTheme.typography.labelLarge)
 
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    MarkerCategory.entries.chunked(3).forEach { rowItems ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            rowItems.forEach { cat ->
-                                val isSelected = selectedCategory == cat
-                                Surface(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .defaultMinSize(minHeight = 48.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            if (title == selectedCategory.label) {
-                                                title = cat.label
-                                            }
-                                            selectedCategory = cat
-                                            if (!hasCustomIcon) {
-                                                selectedIconName = cat.defaultIconName
-                                            }
-                                            if (!hasCustomColor) {
-                                                selectedColorArgb = cat.defaultColorArgb
-                                            }
-                                        },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (isSelected) {
-                                        Color(selectedColorArgb)
-                                    } else {
-                                        ExpressiveTheme.colors.nestedElementSurface
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MarkerCategory.entries.forEach { cat ->
+                        val isSelected = selectedCategory == cat
+                        val chipShape = if (isSelected) {
+                            RoundedCornerShape(percent = 50)
+                        } else {
+                            RoundedCornerShape(8.dp)
+                        }
+                        Surface(
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .clip(chipShape)
+                                .clickable {
+                                    if (title == selectedCategory.label) {
+                                        title = cat.label
                                     }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = cat.icon,
-                                            contentDescription = cat.label,
-                                            tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = cat.label,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1
-                                        )
+                                    selectedCategory = cat
+                                    if (!hasCustomIcon) {
+                                        selectedIconName = cat.defaultIconName
+                                    }
+                                    if (!hasCustomColor) {
+                                        selectedColorArgb = cat.defaultColorArgb
                                     }
                                 }
+                                .testTag("quick_marker_${cat.name.lowercase()}"),
+                            shape = chipShape,
+                            color = if (isSelected) {
+                                ExpressiveTheme.colors.selectorSelected
+                            } else {
+                                ExpressiveTheme.colors.nestedElementSurface
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = cat.icon,
+                                    contentDescription = cat.label,
+                                    tint = if (isSelected) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = cat.label,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                                    ),
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
                 }
 
-                // Centered Google Icon Preview + 2,100+ Google Icon Library Picker
+                // Centered Google Icon Preview + Icon-only 2,100+ Icon Library Button
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = ExpressiveTheme.colors.nestedElementSurface
@@ -1257,13 +1307,24 @@ private fun DropMarkerDialog(
                             }
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        ExpressivePillButton(
-                            text = "2,100+ Icons",
-                            icon = Icons.Filled.Apps,
-                            subtle = true,
-                            onClick = { showIconLibrary = true },
-                            modifier = Modifier.testTag("open_icon_library_button")
-                        )
+                        Surface(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .clickable { showIconLibrary = true }
+                                .testTag("open_icon_library_button"),
+                            shape = CircleShape,
+                            color = ExpressiveTheme.colors.buttonTertiarySubtle
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Filled.Apps,
+                                    contentDescription = "Browse 2,100+ marker icons",
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1329,12 +1390,26 @@ private fun DropMarkerDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                ExpressivePillButton(
+                    text = "Walk Here",
+                    icon = Icons.AutoMirrored.Filled.DirectionsWalk,
+                    subtle = true,
+                    onClick = {
+                        onWalkHere(title.trim().ifEmpty { selectedCategory.label })
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("drop_marker_walk_here_button")
+                )
             }
         },
         confirmButton = {
             ExpressivePillButton(
                 text = "Place Pin",
-                onClick = { onConfirm(title, note, selectedCategory, selectedColorArgb, selectedIconName) }
+                icon = Icons.Filled.Check,
+                onClick = { onConfirm(title, note, selectedCategory, selectedColorArgb, selectedIconName) },
+                modifier = Modifier.testTag("confirm_place_pin_button")
             )
         },
         dismissButton = {
@@ -1588,7 +1663,7 @@ private fun CoordinateStatusBar(
             tintColor = ExpressiveTheme.colors.cardSurface
         ),
         shape = coordPillShape,
-        color = if (blurOn) ExpressiveTheme.colors.cardSurface.copy(alpha = 0.78f) else ExpressiveTheme.colors.cardSurface,
+        color = if (backdropActive) Color.Transparent else ExpressiveTheme.colors.cardSurface,
         shadowElevation = if (blurOn) 0.dp else 3.dp,
         border = if (blurOn) {
             BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)

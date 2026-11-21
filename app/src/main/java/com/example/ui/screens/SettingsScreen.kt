@@ -46,11 +46,13 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -69,11 +71,13 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import com.example.data.local.OfflineRegionEntity
 import com.example.data.model.ApiKeyTestState
 import com.example.data.model.ApiProvider
@@ -127,6 +131,8 @@ fun SettingsScreen(
     onToggleSearchLabels: (Boolean) -> Unit,
     onToggleSectorLabels: (Boolean) -> Unit,
     onToggleUiBlur: (Boolean) -> Unit,
+    onChangeUiTransparency: (Float) -> Unit = {},
+    onChangeUiBlurRadius: (Float) -> Unit = {},
     onToggleLocationOutline: (Boolean) -> Unit,
     onSelectMarkerStyle: (MarkerStyle) -> Unit,
     offlineRegions: List<OfflineRegionEntity> = emptyList(),
@@ -174,7 +180,10 @@ fun SettingsScreen(
                         Modifier
                     }
                 )
-                .conditionalBlur(enabled = mapSettings.uiBlurEnabled && anyDialogOpen, radius = 10.dp)
+                .conditionalBlur(
+                    enabled = mapSettings.uiBlurEnabled && anyDialogOpen,
+                    radius = (mapSettings.uiBlurRadiusDp * 0.5f).coerceIn(2f, 20f).dp
+                )
                 .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(
                 start = 16.dp,
@@ -320,15 +329,100 @@ fun SettingsScreen(
                             }
                         }
                     }
-                    SettingToggleCard(
-                        icon = Icons.Filled.Gradient,
-                        title = "UI Blur",
-                        subtitle = "Enable frosted translucent cards and blur behind overlays and dialogs",
-                        checked = mapSettings.uiBlurEnabled,
-                        onCheckedChange = onToggleUiBlur,
-                        shape = RoundedCornerShape(16.dp),
-                        switchTestTag = "ui_blur_switch"
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        SettingToggleCard(
+                            icon = Icons.Filled.Gradient,
+                            title = "UI Blur",
+                            subtitle = "Enable frosted translucent cards and blur behind overlays and dialogs",
+                            checked = mapSettings.uiBlurEnabled,
+                            onCheckedChange = onToggleUiBlur,
+                            shape = groupedCardShape(0, 2),
+                            switchTestTag = "ui_blur_switch"
+                        )
+                        ExpressiveCard(shape = groupedCardShape(1, 2)) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                val transparencyPct = (mapSettings.uiTransparency * 100f).roundToInt()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "UI Transparency",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "$transparencyPct%",
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.testTag("ui_transparency_value")
+                                    )
+                                }
+                                Text(
+                                    text = "Adjust how translucent cards, bars, and frosted overlays appear",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Slider(
+                                    value = mapSettings.uiTransparency,
+                                    onValueChange = { value ->
+                                        if (!mapSettings.uiBlurEnabled) onToggleUiBlur(true)
+                                        onChangeUiTransparency(value)
+                                    },
+                                    valueRange = 0f..0.85f,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("ui_transparency_slider")
+                                )
+
+                                HorizontalDivider(
+                                    thickness = 0.8.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+
+                                val blurRadiusInt = mapSettings.uiBlurRadiusDp.roundToInt()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Frosted Glass Blur Radius",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "$blurRadiusInt dp",
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.testTag("ui_blur_radius_value")
+                                    )
+                                }
+                                Text(
+                                    text = "Control the backdrop blur intensity behind translucent UI elements",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Slider(
+                                    value = mapSettings.uiBlurRadiusDp,
+                                    onValueChange = { value ->
+                                        if (!mapSettings.uiBlurEnabled) onToggleUiBlur(true)
+                                        onChangeUiBlurRadius(value)
+                                    },
+                                    valueRange = 0f..40f,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("ui_blur_radius_slider")
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = "Map colors automatically follow Light and Dark mode.",
                         style = MaterialTheme.typography.bodySmall,

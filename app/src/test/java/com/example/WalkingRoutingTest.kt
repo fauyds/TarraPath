@@ -124,7 +124,59 @@ class WalkingRoutingTest {
     }
 
     @Test
-    fun walkingRouteService_parsesOsrmValhallaAndGeoapifyWalkingResponses() {
+    fun offlineRoadGraph_mergesChunkedOutSkelAndOutGeomWithoutDuplicatingBoundaryWays() {
+        // Simulate two adjacent tiled Overpass responses using lightweight `out skel qt` (no tags) + `out geom`,
+        // sharing boundary node 202 and an overlapping boundary way 501.
+        val chunkA = """
+            {
+              "version": 0.6,
+              "elements": [
+                { "type": "node", "id": 201, "lat": 37.78000, "lon": -122.42000 },
+                { "type": "node", "id": 202, "lat": 37.78000, "lon": -122.41900 },
+                { "type": "way", "id": 501, "nodes": [201, 202] }
+              ]
+            }
+        """.trimIndent()
+        val chunkB = """
+            {
+              "version": 0.6,
+              "elements": [
+                { "type": "node", "id": 202, "lat": 37.78000, "lon": -122.41900 },
+                {
+                  "type": "way",
+                  "id": 501,
+                  "nodes": [201, 202]
+                },
+                {
+                  "type": "way",
+                  "id": 502,
+                  "nodes": [202, 203],
+                  "geometry": [
+                    { "lat": 37.78000, "lon": -122.41900 },
+                    { "lat": 37.78100, "lon": -122.41900 }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val merged = OfflineRoadGraph.parseOverpassWalkGraphChunks(listOf(chunkA, chunkB))
+        assertEquals(3, merged.nodeCount)
+        // Bidirectional edges for 201<->202 and 202<->203 = 4 directed edges (duplicate way 501 ignored)
+        assertEquals(4, merged.edgeCount)
+
+        val crossBorderRoute = merged.findWalkingRoute(
+            startLat = 37.78001,
+            startLon = -122.41998,
+            endLat = 37.78098,
+            endLon = -122.41902
+        )
+        assertNotNull(crossBorderRoute)
+        assertTrue(crossBorderRoute!!.distanceMeters in 170.0..230.0)
+    }
+
+    @Test
+    fun walkingRouteService_parsesOsrmValhallaGeoapifyAndBrouterWalkingResponses() {
         val osrmJson = """
             {
               "code": "Ok",
@@ -204,6 +256,27 @@ class WalkingRoutingTest {
         assertEquals(37.7750, valhalla.points[0].latitude, 0.0001)
         assertEquals(-122.4180, valhalla.points[1].longitude, 0.0001)
         assertEquals(142.0, valhalla.distanceMeters, 0.1)
+
+        val brouterJson = """
+            {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "properties": { "track-length": "318", "total-time": "235" },
+                  "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[-122.4190, 37.7750, 12], [-122.4182, 37.7754, 15], [-122.4180, 37.7760, 18]]
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+        val brouter = WalkingRouteService.parseBrouterGeoJson(brouterJson)
+        assertEquals(3, brouter.points.size)
+        assertEquals(318.0, brouter.distanceMeters, 0.01)
+        assertEquals(235L, brouter.estimatedSeconds)
+        assertEquals("OSM BRouter Walk (Online)", brouter.providerLabel)
     }
 
     @Test

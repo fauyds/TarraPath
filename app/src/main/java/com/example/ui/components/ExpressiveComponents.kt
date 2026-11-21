@@ -114,18 +114,23 @@ fun isBackdropBlurActive(): Boolean {
 fun Modifier.applyBackdropBlur(
     shape: Shape,
     tintColor: Color,
-    blurRadius: Dp = 20.dp
+    blurRadius: Dp = Dp.Unspecified
 ): Modifier {
     val hazeState = LocalBackdropHazeState.current
+    val resolvedRadius = if (blurRadius == Dp.Unspecified) {
+        ExpressiveTheme.colors.uiBlurRadiusDp.dp
+    } else {
+        blurRadius
+    }.coerceAtLeast(0.dp)
     return if (ExpressiveTheme.colors.uiBlurEnabled && hazeState != null) {
         this
             .clip(shape)
             .hazeEffect(
                 state = hazeState,
                 style = HazeStyle(
-                    backgroundColor = tintColor.copy(alpha = 0.25f),
+                    backgroundColor = tintColor.copy(alpha = (tintColor.alpha * 0.35f).coerceIn(0f, 1f)),
                     tint = HazeTint(tintColor),
-                    blurRadius = blurRadius,
+                    blurRadius = resolvedRadius,
                     noiseFactor = 0.04f
                 )
             )
@@ -141,15 +146,20 @@ fun ExpressiveCard(
     containerColor: Color = ExpressiveTheme.colors.cardSurface,
     shadowElevation: Dp = 2.dp,
     border: BorderStroke? = null,
+    showBorder: Boolean = true,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val blurOn = ExpressiveTheme.colors.uiBlurEnabled
     val backdropActive = isBackdropBlurActive()
-    val resolvedBorder = border ?: if (blurOn) {
-        BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
-    } else {
+    val resolvedBorder = if (!showBorder) {
         null
+    } else {
+        border ?: if (blurOn) {
+            BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+        } else {
+            null
+        }
     }
     val resolvedElevation = if (blurOn) 0.dp else shadowElevation
 
@@ -160,7 +170,7 @@ fun ExpressiveCard(
                 if (onClick != null) Modifier.clip(shape).clickable(onClick = onClick) else Modifier
             ),
         shape = shape,
-        color = if (blurOn) containerColor.copy(alpha = 0.78f) else containerColor,
+        color = if (backdropActive) Color.Transparent else containerColor,
         shadowElevation = resolvedElevation,
         border = resolvedBorder
     ) {
@@ -613,15 +623,17 @@ fun Modifier.conditionalBlur(enabled: Boolean, radius: Dp = 12.dp): Modifier {
 }
 
 @Composable
-fun ApplyDialogBlurIfEnabled(blurRadiusPx: Int = 40) {
+fun ApplyDialogBlurIfEnabled(blurRadiusPx: Int? = null) {
     val uiBlurEnabled = ExpressiveTheme.colors.uiBlurEnabled
-    if (!uiBlurEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val uiBlurRadiusDp = ExpressiveTheme.colors.uiBlurRadiusDp
+    val resolvedBlurPx = (blurRadiusPx ?: (uiBlurRadiusDp * 2f).roundToInt()).coerceIn(0, 80)
+    if (!uiBlurEnabled || resolvedBlurPx <= 0 || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
     val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window ?: return
 
-    DisposableEffect(dialogWindow, uiBlurEnabled, blurRadiusPx) {
+    DisposableEffect(dialogWindow, uiBlurEnabled, resolvedBlurPx) {
         dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
         val params = dialogWindow.attributes
-        params.blurBehindRadius = blurRadiusPx
+        params.blurBehindRadius = resolvedBlurPx
         dialogWindow.attributes = params
         onDispose {
             dialogWindow.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)

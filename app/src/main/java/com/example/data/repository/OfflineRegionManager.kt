@@ -66,26 +66,36 @@ class OfflineRegionManager(
         apiProvider: ApiProvider
     ): Result<OfflineRegionEntity> = withContext(Dispatchers.IO) {
         val cleanName = regionName.trim().ifEmpty { "Offline Area" }
-        val clampedRadius = radiusMeters.coerceIn(500, 6000)
+        val clampedRadius = radiusMeters.coerceIn(1000, 25_000)
         val bbox = WalkingNavigationPolicy.boundingBoxForRadius(centerLat, centerLon, clampedRadius)
 
         _downloadProgress.value = OfflineDownloadProgress(
             isDownloading = true,
             regionName = cleanName,
             stage = "Fetching walkable streets & footpaths…",
-            progressFraction = 0.1f,
+            progressFraction = 0.05f,
             errorMessage = null
         )
 
         return@withContext try {
-            val overpassJson = fetchOverpassWalkJson(bbox)
+            val overpassChunks = fetchOverpassWalkChunks(bbox, clampedRadius) { chunkDone, chunkTotal ->
+                val frac = if (chunkTotal > 0) chunkDone.toFloat() / chunkTotal.toFloat() else 0f
+                _downloadProgress.value = _downloadProgress.value.copy(
+                    stage = if (chunkTotal > 1) {
+                        "Downloading walkable streets ($chunkDone/$chunkTotal)…"
+                    } else {
+                        "Fetching walkable streets & footpaths…"
+                    },
+                    progressFraction = 0.05f + frac * 0.45f
+                )
+            }
             _downloadProgress.value = _downloadProgress.value.copy(
                 stage = "Building CPU walking graph…",
-                progressFraction = 0.42f
+                progressFraction = 0.54f
             )
 
             val graph = withContext(Dispatchers.Default) {
-                OfflineRoadGraph.parseOverpassWalkGraph(overpassJson)
+                OfflineRoadGraph.parseOverpassWalkGraphChunks(overpassChunks)
             }
             if (graph.nodeCount < 2 || graph.edgeCount == 0) {
                 val emptyErr = IllegalStateException("No walkable paths found in this area")
@@ -106,11 +116,13 @@ class OfflineRegionManager(
 
             _downloadProgress.value = _downloadProgress.value.copy(
                 stage = "Caching offline map tiles…",
-                progressFraction = 0.50f
+                progressFraction = 0.58f
             )
 
             val (tileCount, tileBytes) = cacheMapTilesForBbox(
                 bbox = bbox,
+                centerLat = centerLat,
+                centerLon = centerLon,
                 isDarkTheme = isDarkTheme,
                 showStreetNames = showStreetNames,
                 apiKey = apiKey,
@@ -118,7 +130,7 @@ class OfflineRegionManager(
             ) { fraction ->
                 _downloadProgress.value = _downloadProgress.value.copy(
                     stage = "Caching offline map tiles…",
-                    progressFraction = 0.50f + fraction * 0.46f
+                    progressFraction = 0.58f + fraction * 0.39f
                 )
             }
 
@@ -244,7 +256,85 @@ class OfflineRegionManager(
         }
     }
 
-    private fun fetchOverpassWalkJson(bbox: BoundingBox): String {
+    private fun fetchOverpassWalkChunks(
+        bbox: BoundingBox,
+        radiusMeters: Int,
+        onChunkProgress: (done: Int, total: Int) -> Unit
+    ): List<String> {
+        val gridDiv = kotlin.math.ceil((radiusMeters * 2.0) / 5000.0).toInt().coerceIn(1, 5)
+        val subBoxes = ArrayList<BoundingBox>(gridDiv * gridDiv)
+        val latStep = (bbox.northLat - bbox.southLat) / gridDiv
+        val lonStep = (bbox.eastLon - bbox.westLon) / gridDiv
+        val pad = 0.0004 // slight overlap so ways crossing tile edges share connecting nodes
+
+        for (r in 0 until gridDiv) {
+            for (c in 0 until gridDiv) {
+                val s = (bbox.southLat + r * latStep - if (r > 0) pad else 0.0).coerceIn(-85.0, 85.0)
+                val n = (bbox.southLat + (r + 1) * latStep + if (r < gridDiv - 1) pad else 0.0).coerceIn(-85.0, 85.0)
+                val w = (bbox.westLon + c * lonStep - if (c > 0) pad else 0.0).coerceIn(-180.0, 180.0)
+                val e = (bbox.westLon + (c + 1) * lonStep + if (c < gridDiv - 1) pad else 0.0).coerceIn(-180.0, 180.0)
+                subBoxes.add(BoundingBox(s, w, n, e))
+            }
+        }
+
+        val collected = ArrayList<String>(subBoxes.size)
+        subBoxes.forEachIndexed { idx, cell ->
+            val cellResults = fetchOverpassCellWithQuadFallback(cell, depth = 0, mirrorOffset = idx)
+            collected.addAll(cellResults)
+            onChunkProgress(idx + 1, subBoxes.size)
+        }
+        return collected
+    }
+
+    private fun fetchOverpassCellWithQuadFallback(
+        bbox: BoundingBox,
+        depth: Int,
+        mirrorOffset: Int
+    ): List<String> {
+        val endpoints = listOf(
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter",
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+        )
+        val query = buildOverpassWalkQuery(bbox)
+        val encodedBody = "data=${URLEncoder.encode(query, "UTF-8")}"
+
+        var lastError: Throwable? = null
+        for (attemptIdx in endpoints.indices) {
+            val endpoint = endpoints[(mirrorOffset + attemptIdx) % endpoints.size]
+            val result = runCatching {
+                executeOverpassPost(endpoint, encodedBody)
+            }
+            if (result.isSuccess) {
+                return listOf(result.getOrThrow())
+            }
+            lastError = result.exceptionOrNull()
+            Thread.sleep(350L * (attemptIdx + 1))
+        }
+
+        val latSpan = bbox.northLat - bbox.southLat
+        val lonSpan = bbox.eastLon - bbox.westLon
+        if (depth < 2 && latSpan > 0.012 && lonSpan > 0.012) {
+            val midLat = (bbox.southLat + bbox.northLat) * 0.5
+            val midLon = (bbox.westLon + bbox.eastLon) * 0.5
+            val pad = 0.0002
+            val quads = listOf(
+                BoundingBox(bbox.southLat, bbox.westLon, midLat + pad, midLon + pad),
+                BoundingBox(bbox.southLat, midLon - pad, midLat + pad, bbox.eastLon),
+                BoundingBox(midLat - pad, bbox.westLon, bbox.northLat, midLon + pad),
+                BoundingBox(midLat - pad, midLon - pad, bbox.northLat, bbox.eastLon)
+            )
+            val out = ArrayList<String>(4)
+            quads.forEachIndexed { qIdx, qBox ->
+                out.addAll(fetchOverpassCellWithQuadFallback(qBox, depth + 1, mirrorOffset + qIdx))
+            }
+            return out
+        }
+
+        throw lastError ?: IllegalStateException("Could not reach Overpass street data server")
+    }
+
+    private fun buildOverpassWalkQuery(bbox: BoundingBox): String {
         val bboxStr = String.format(
             Locale.US,
             "%.6f,%.6f,%.6f,%.6f",
@@ -253,55 +343,55 @@ class OfflineRegionManager(
             bbox.northLat,
             bbox.eastLon
         )
-        val query = """
-            [out:json][timeout:35];
-            (
-              way["highway"~"^(footway|path|pedestrian|living_street|residential|unclassified|tertiary|secondary|primary|service|track|steps|cycleway|bridleway|corridor)$"]
-                 ["access"!~"^(no|private)$"]
-                 ["foot"!="no"]($bboxStr);
-            );
+        return """
+            [out:json][timeout:45];
+            way["highway"~"^(footway|path|pedestrian|living_street|residential|unclassified|tertiary|secondary|primary|service|track|steps|cycleway|bridleway|corridor)$"]
+               ["access"!~"^(no|private)$"]
+               ["foot"!="no"]($bboxStr);
             (._;>;);
-            out body;
+            out skel qt;
         """.trimIndent()
-        val encodedBody = "data=${URLEncoder.encode(query, "UTF-8")}"
+    }
 
-        val endpoints = listOf(
-            "https://overpass-api.de/api/interpreter",
-            "https://overpass.kumi.systems/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter"
-        )
-        var lastError: Throwable? = null
-        for (endpoint in endpoints) {
-            val attempt = runCatching {
-                val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    connectTimeout = 15_000
-                    readTimeout = 35_000
-                    setRequestProperty("User-Agent", "TerraPath-Android/1.0")
-                    setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-                }
-                try {
-                    OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
-                        writer.write(encodedBody)
-                    }
-                    val code = conn.responseCode
-                    if (code !in 200..299) {
-                        throw IllegalStateException("Overpass HTTP $code")
-                    }
-                    conn.inputStream.bufferedReader().use { it.readText() }
-                } finally {
-                    conn.disconnect()
-                }
-            }
-            if (attempt.isSuccess) return attempt.getOrThrow()
-            lastError = attempt.exceptionOrNull()
+    private fun executeOverpassPost(endpoint: String, encodedBody: String): String {
+        val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 15_000
+            readTimeout = 45_000
+            setRequestProperty("User-Agent", "TerraPath-Android/1.0")
+            setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            setRequestProperty("Accept", "application/json")
         }
-        throw lastError ?: IllegalStateException("Could not reach Overpass street data server")
+        try {
+            OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
+                writer.write(encodedBody)
+            }
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                throw IllegalStateException("Overpass HTTP $code")
+            }
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            val trimmed = body.trimStart()
+            if (!trimmed.startsWith("{")) {
+                throw IllegalStateException("Invalid Overpass response format")
+            }
+            if (trimmed.contains("\"remark\"") &&
+                (trimmed.contains("timed out", ignoreCase = true) ||
+                    trimmed.contains("out of memory", ignoreCase = true))
+            ) {
+                throw IllegalStateException("Overpass query timed out for this cell")
+            }
+            return body
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun cacheMapTilesForBbox(
         bbox: BoundingBox,
+        centerLat: Double,
+        centerLon: Double,
         isDarkTheme: Boolean,
         showStreetNames: Boolean,
         apiKey: String,
@@ -318,9 +408,11 @@ class OfflineRegionManager(
         val tileWriter = runCatching { SqlTileWriter() }.getOrNull() ?: return 0 to 0L
         val expirationNever = Long.MAX_VALUE
 
-        val tilesToDownload = ArrayList<Long>()
-        val maxTilesBudget = 160
-        for (zoom in 13..16) {
+        val tilesToDownload = LinkedHashSet<Long>()
+        val maxTilesBudget = 320
+
+        // 1. Overview zooms across entire downloaded bounding box (z12..z14)
+        for (zoom in 12..14) {
             val minX = lonToTileX(bbox.westLon, zoom)
             val maxX = lonToTileX(bbox.eastLon, zoom)
             val minY = latToTileY(bbox.northLat, zoom)
@@ -335,6 +427,23 @@ class OfflineRegionManager(
             if (tilesToDownload.size >= maxTilesBudget) break
         }
 
+        // 2. Crisp z15 street tiles near the center of the region with remaining budget
+        if (tilesToDownload.size < maxTilesBudget) {
+            val coreBox = WalkingNavigationPolicy.boundingBoxForRadius(centerLat, centerLon, 2500)
+            val zoom = 15
+            val minX = lonToTileX(coreBox.westLon, zoom)
+            val maxX = lonToTileX(coreBox.eastLon, zoom)
+            val minY = latToTileY(coreBox.northLat, zoom)
+            val maxY = latToTileY(coreBox.southLat, zoom)
+            for (x in minX..maxX) {
+                for (y in minY..maxY) {
+                    if (tilesToDownload.size >= maxTilesBudget) break
+                    tilesToDownload.add(MapTileIndex.getTileIndex(zoom, x, y))
+                }
+                if (tilesToDownload.size >= maxTilesBudget) break
+            }
+        }
+
         if (tilesToDownload.isEmpty()) {
             tileWriter.onDetach()
             return 0 to 0L
@@ -342,9 +451,10 @@ class OfflineRegionManager(
 
         var savedCount = 0
         var savedBytes = 0L
+        val tileList = tilesToDownload.toList()
 
         try {
-            tilesToDownload.forEachIndexed { idx, tileIndex ->
+            tileList.forEachIndexed { idx, tileIndex ->
                 runCatching {
                     val bytes: ByteArray? = when (tileSource) {
                         is NoLabelsVectorTileSource -> {
@@ -376,8 +486,8 @@ class OfflineRegionManager(
                         }
                     }
                 }
-                if (idx % 4 == 0 || idx == tilesToDownload.lastIndex) {
-                    onProgress((idx + 1).toFloat() / tilesToDownload.size.toFloat())
+                if (idx % 4 == 0 || idx == tileList.lastIndex) {
+                    onProgress((idx + 1).toFloat() / tileList.size.toFloat())
                 }
             }
         } finally {

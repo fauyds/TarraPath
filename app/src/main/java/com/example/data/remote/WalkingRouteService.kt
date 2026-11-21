@@ -61,7 +61,17 @@ class WalkingRouteService {
             return@withContext valhallaAttempt
         }
 
-        val err = osrmAttempt.exceptionOrNull() ?: valhallaAttempt.exceptionOrNull()
+        // 4. Tertiary free OpenStreetMap pedestrian router (BRouter shortest/foot)
+        val brouterAttempt = runCatching {
+            queryBrouterWalk(startLat, startLon, endLat, endLon)
+        }
+        if (brouterAttempt.isSuccess) {
+            return@withContext brouterAttempt
+        }
+
+        val err = osrmAttempt.exceptionOrNull()
+            ?: valhallaAttempt.exceptionOrNull()
+            ?: brouterAttempt.exceptionOrNull()
         Result.failure(err ?: IllegalStateException("Online walking route server unavailable"))
     }
 
@@ -124,11 +134,29 @@ class WalkingRouteService {
         return parseGeoapifyRoutingJson(body)
     }
 
+    private fun queryBrouterWalk(
+        startLat: Double,
+        startLon: Double,
+        endLat: Double,
+        endLon: Double
+    ): OnlineWalkingRouteOutcome {
+        val endpoint = String.format(
+            Locale.US,
+            "https://brouter.de/brouter?lonlats=%.6f,%.6f|%.6f,%.6f&profile=shortest&alternativeidx=0&format=geojson",
+            startLon,
+            startLat,
+            endLon,
+            endLat
+        )
+        val body = httpGet(endpoint)
+        return parseBrouterGeoJson(body)
+    }
+
     private fun httpGet(urlStr: String): String {
         val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 9000
-            readTimeout = 10000
+            connectTimeout = 12_000
+            readTimeout = 14_000
             setRequestProperty("User-Agent", "TerraPath-Android/1.0")
             setRequestProperty("Accept", "application/json")
         }
@@ -258,6 +286,33 @@ class WalkingRouteService {
                 distanceMeters = resolvedDist,
                 estimatedSeconds = timeSec,
                 providerLabel = "Geoapify Walk (Online)"
+            )
+        }
+
+        fun parseBrouterGeoJson(jsonStr: String): OnlineWalkingRouteOutcome {
+            val root = JSONObject(jsonStr)
+            val features = root.getJSONArray("features")
+            if (features.length() == 0) throw IllegalStateException("No BRouter walking route")
+            val feature = features.getJSONObject(0)
+            val props = feature.optJSONObject("properties")
+            val coords = feature.getJSONObject("geometry").getJSONArray("coordinates")
+            val pts = ArrayList<LatLonPoint>(coords.length())
+            for (i in 0 until coords.length()) {
+                val item = coords.getJSONArray(i)
+                val lon = item.getDouble(0)
+                val lat = item.getDouble(1)
+                pts.add(LatLonPoint(latitude = lat, longitude = lon))
+            }
+            if (pts.size < 2) throw IllegalStateException("BRouter route geometry too short")
+            val propDist = props?.optString("track-length", "")?.toDoubleOrNull() ?: 0.0
+            val distMeters = if (propDist > 0.0) propDist else OfflineRoadGraph.polylineDistanceMeters(pts)
+            val propTime = props?.optString("total-time", "")?.toLongOrNull() ?: 0L
+            val estSec = if (propTime > 0L) propTime else (distMeters / OfflineRoadGraph.WALKING_SPEED_MPS).toLong().coerceAtLeast(1L)
+            return OnlineWalkingRouteOutcome(
+                points = pts,
+                distanceMeters = distMeters,
+                estimatedSeconds = estSec,
+                providerLabel = "OSM BRouter Walk (Online)"
             )
         }
 

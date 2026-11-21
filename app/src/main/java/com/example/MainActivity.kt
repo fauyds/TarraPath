@@ -136,7 +136,9 @@ fun TerraPathApp(appContainer: AppContainer) {
         darkTheme = isDarkTheme,
         dynamicColor = true,
         customAccentColorArgb = customAccentColorArgb,
-        uiBlurEnabled = mapSettings.uiBlurEnabled
+        uiBlurEnabled = mapSettings.uiBlurEnabled,
+        uiTransparency = mapSettings.uiTransparency,
+        uiBlurRadiusDp = mapSettings.uiBlurRadiusDp
     ) {
         val context = LocalContext.current
 
@@ -361,6 +363,9 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onStartWalkingToMarker = { marker -> viewModel.startWalkingToMarker(marker) },
                                 onStartWalkingToTrackStart = { id -> viewModel.startWalkingToTrackStart(id) },
                                 onStartWalkingToSearchPlace = { place -> viewModel.startWalkingToSearchPlace(place) },
+                                onStartWalkingToCoordinate = { label, lat, lon ->
+                                    viewModel.startWalkingToCoordinate(label, lat, lon)
+                                },
                                 onStopWalkingNavigation = { viewModel.stopWalkingNavigation() },
                                 onDismissArrivalBanner = { viewModel.dismissArrivalBanner() },
                                 onSelectRoutingMode = { mode -> viewModel.setRoutingMode(mode) },
@@ -455,6 +460,8 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onToggleSearchLabels = { viewModel.setShowSearchLabels(it) },
                                 onToggleSectorLabels = { viewModel.setShowSectorLabels(it) },
                                 onToggleUiBlur = { viewModel.setUiBlurEnabled(it) },
+                                onChangeUiTransparency = { viewModel.setUiTransparency(it) },
+                                onChangeUiBlurRadius = { viewModel.setUiBlurRadiusDp(it) },
                                 onToggleLocationOutline = { viewModel.setShowLocationOutline(it) },
                                 onSelectMarkerStyle = { viewModel.setMarkerStyle(it) },
                                 offlineRegions = offlineRegions,
@@ -483,8 +490,7 @@ fun TerraPathApp(appContainer: AppContainer) {
                                     }
                                     .applyBackdropBlur(
                                         shape = RectangleShape,
-                                        tintColor = ExpressiveTheme.colors.cardSurface,
-                                        blurRadius = 22.dp
+                                        tintColor = ExpressiveTheme.colors.cardSurface
                                     )
                             ) {
                                 if (mapSettings.uiBlurEnabled) {
@@ -495,7 +501,7 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 }
                                 NavigationBar(
                                     containerColor = if (blurOn) {
-                                        ExpressiveTheme.colors.cardSurface.copy(alpha = 0.78f)
+                                        Color.Transparent
                                     } else {
                                         ExpressiveTheme.colors.cardSurface
                                     },

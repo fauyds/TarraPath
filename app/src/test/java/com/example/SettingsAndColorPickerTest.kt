@@ -96,15 +96,36 @@ class SettingsAndColorPickerTest {
         }
 
         prefs.setUiBlurEnabled(true)
+        prefs.setUiTransparency(0.62f)
+        prefs.setUiBlurRadiusDp(32f)
         prefs.setDisableCreatedMarkerLabels(true)
         val updatedSettings = prefs.mapDisplaySettings.first()
         assertTrue(updatedSettings.uiBlurEnabled)
+        assertEquals(0.62f, updatedSettings.uiTransparency, 0.001f)
+        assertEquals(32f, updatedSettings.uiBlurRadiusDp, 0.001f)
         assertTrue(updatedSettings.disableCreatedMarkerLabels)
 
+        // Clamping out-of-range values
+        prefs.setUiTransparency(1.5f)
+        prefs.setUiBlurRadiusDp(99f)
+        val clampedHigh = prefs.mapDisplaySettings.first()
+        assertEquals(0.85f, clampedHigh.uiTransparency, 0.001f)
+        assertEquals(40f, clampedHigh.uiBlurRadiusDp, 0.001f)
+
+        prefs.setUiTransparency(-0.2f)
+        prefs.setUiBlurRadiusDp(-5f)
+        val clampedLow = prefs.mapDisplaySettings.first()
+        assertEquals(0f, clampedLow.uiTransparency, 0.001f)
+        assertEquals(0f, clampedLow.uiBlurRadiusDp, 0.001f)
+
         prefs.setUiBlurEnabled(false)
+        prefs.setUiTransparency(0.25f)
+        prefs.setUiBlurRadiusDp(20f)
         prefs.setDisableCreatedMarkerLabels(false)
         val resetSettings = prefs.mapDisplaySettings.first()
         assertTrue(!resetSettings.uiBlurEnabled)
+        assertEquals(0.25f, resetSettings.uiTransparency, 0.001f)
+        assertEquals(20f, resetSettings.uiBlurRadiusDp, 0.001f)
         assertTrue(!resetSettings.disableCreatedMarkerLabels)
     }
 

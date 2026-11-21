@@ -128,7 +128,7 @@ fun LocationSearchBarAndResults(
                 .defaultMinSize(minHeight = 50.dp)
                 .applyBackdropBlur(shape = searchPillShape, tintColor = ExpressiveTheme.colors.cardSurface),
             shape = searchPillShape,
-            color = if (blurOn) ExpressiveTheme.colors.cardSurface.copy(alpha = 0.78f) else ExpressiveTheme.colors.cardSurface,
+            color = if (backdropActive) Color.Transparent else ExpressiveTheme.colors.cardSurface,
             shadowElevation = if (blurOn) 0.dp else 4.dp,
             border = if (blurOn) {
                 androidx.compose.foundation.BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)

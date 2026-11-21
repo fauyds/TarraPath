@@ -62,7 +62,7 @@ class OfflineRoadGraph(
         startLon: Double,
         endLat: Double,
         endLon: Double,
-        maxSnapMeters: Double = 1500.0
+        maxSnapMeters: Double = 2500.0
     ): OfflineRouteResult? {
         if (nodeCount == 0 || edgeCount == 0) return null
 
@@ -134,7 +134,7 @@ class OfflineRoadGraph(
         var bestGoalTerminalNode = -1
 
         var expansions = 0
-        val maxExpansions = minOf(nodeCount * 2, 180_000)
+        val maxExpansions = minOf(nodeCount * 2, 350_000)
 
         while (queue.isNotEmpty() && expansions < maxExpansions) {
             val current = queue.poll() ?: break
@@ -339,36 +339,61 @@ class OfflineRoadGraph(
         }
 
         /**
-         * Builds a walkable pedestrian graph from OpenStreetMap Overpass JSON output.
+         * Builds a walkable pedestrian graph from a single OpenStreetMap Overpass JSON response.
          */
         fun parseOverpassWalkGraph(jsonString: String): OfflineRoadGraph {
-            val root = JSONObject(jsonString)
-            val elements = root.optJSONArray("elements") ?: return emptyGraph()
+            return parseOverpassWalkGraphChunks(listOf(jsonString))
+        }
 
-            val nodeLatByOsmId = HashMap<Long, Double>(elements.length())
-            val nodeLonByOsmId = HashMap<Long, Double>(elements.length())
-            val ways = ArrayList<LongArray>()
+        /**
+         * Merges one or more Overpass JSON chunks (supporting `out skel`, `out body`, and `out geom`)
+         * into a single unified walkable CSR graph without duplicating cross-boundary nodes or edges.
+         */
+        fun parseOverpassWalkGraphChunks(jsonStrings: List<String>): OfflineRoadGraph {
+            if (jsonStrings.isEmpty()) return emptyGraph()
 
-            for (i in 0 until elements.length()) {
-                val el = elements.optJSONObject(i) ?: continue
-                when (el.optString("type")) {
-                    "node" -> {
-                        val id = el.optLong("id", -1L)
-                        if (id >= 0L && el.has("lat") && el.has("lon")) {
-                            nodeLatByOsmId[id] = el.optDouble("lat")
-                            nodeLonByOsmId[id] = el.optDouble("lon")
+            val nodeLatByOsmId = HashMap<Long, Double>(4096)
+            val nodeLonByOsmId = HashMap<Long, Double>(4096)
+            val seenWayIds = HashSet<Long>(2048)
+            val ways = ArrayList<LongArray>(2048)
+
+            for (jsonString in jsonStrings) {
+                if (jsonString.isBlank()) continue
+                val root = JSONObject(jsonString)
+                val elements = root.optJSONArray("elements") ?: continue
+
+                for (i in 0 until elements.length()) {
+                    val el = elements.optJSONObject(i) ?: continue
+                    when (el.optString("type")) {
+                        "node" -> {
+                            val id = el.optLong("id", -1L)
+                            if (id >= 0L && el.has("lat") && el.has("lon")) {
+                                nodeLatByOsmId[id] = el.optDouble("lat")
+                                nodeLonByOsmId[id] = el.optDouble("lon")
+                            }
                         }
-                    }
-                    "way" -> {
-                        val tags = el.optJSONObject("tags")
-                        if (!isWalkableWay(tags)) continue
-                        val nds = el.optJSONArray("nodes") ?: continue
-                        if (nds.length() < 2) continue
-                        val arr = LongArray(nds.length())
-                        for (k in 0 until nds.length()) {
-                            arr[k] = nds.optLong(k, -1L)
+                        "way" -> {
+                            val wayId = el.optLong("id", -1L)
+                            if (wayId >= 0L && !seenWayIds.add(wayId)) continue
+                            val tags = el.optJSONObject("tags")
+                            if (!isWalkableWay(tags)) continue
+                            val nds = el.optJSONArray("nodes") ?: continue
+                            if (nds.length() < 2) continue
+                            val geom = el.optJSONArray("geometry")
+                            val arr = LongArray(nds.length())
+                            for (k in 0 until nds.length()) {
+                                val nid = nds.optLong(k, -1L)
+                                arr[k] = nid
+                                if (nid >= 0L && geom != null && k < geom.length()) {
+                                    val gObj = geom.optJSONObject(k)
+                                    if (gObj != null && gObj.has("lat") && gObj.has("lon")) {
+                                        nodeLatByOsmId.putIfAbsent(nid, gObj.optDouble("lat"))
+                                        nodeLonByOsmId.putIfAbsent(nid, gObj.optDouble("lon"))
+                                    }
+                                }
+                            }
+                            ways.add(arr)
                         }
-                        ways.add(arr)
                     }
                 }
             }

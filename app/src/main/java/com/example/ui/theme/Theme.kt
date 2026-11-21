@@ -26,6 +26,8 @@ fun TerraPathTheme(
     dynamicColor: Boolean = true,
     customAccentColorArgb: Long? = null,
     uiBlurEnabled: Boolean = false,
+    uiTransparency: Float = 0.25f,
+    uiBlurRadiusDp: Float = 20f,
     content: @Composable () -> Unit
 ) {
     val baseColorScheme = when {
@@ -37,25 +39,30 @@ fun TerraPathTheme(
         else -> FallbackLightColorScheme
     }
 
+    val clampedTransparency = uiTransparency.coerceIn(0f, 0.85f)
+    val clampedBlurRadiusDp = uiBlurRadiusDp.coerceIn(0f, 40f)
+    val glassAlpha = (1f - clampedTransparency).coerceIn(0.15f, 1f)
+
     val appBackground = if (darkTheme) DarkAppBackground else LightAppBackground
     val baseCardSurface = if (darkTheme) DarkCardSurface else LightCardSurface
     val cardSurface = if (uiBlurEnabled) {
-        baseCardSurface.copy(alpha = if (darkTheme) 0.72f else 0.78f)
+        baseCardSurface.copy(alpha = glassAlpha)
     } else {
         baseCardSurface
     }
     val nestedSurface = if (uiBlurEnabled) {
-        appBackground.copy(alpha = if (darkTheme) 0.68f else 0.74f)
+        appBackground.copy(alpha = (glassAlpha - 0.04f).coerceIn(0.12f, 1f))
     } else {
         appBackground
     }
     val dialogSurface = if (uiBlurEnabled) {
-        baseCardSurface.copy(alpha = if (darkTheme) 0.88f else 0.92f)
+        baseCardSurface.copy(alpha = (glassAlpha + 0.14f).coerceIn(0.32f, 0.96f))
     } else {
         baseCardSurface
     }
     val frostedBorder = if (uiBlurEnabled) {
-        if (darkTheme) Color.White.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.65f)
+        val borderScale = (0.35f + (1f - clampedTransparency) * 0.65f).coerceIn(0.3f, 1f)
+        if (darkTheme) Color.White.copy(alpha = 0.18f * borderScale) else Color.White.copy(alpha = 0.7f * borderScale)
     } else {
         Color.Transparent
     }
@@ -103,6 +110,8 @@ fun TerraPathTheme(
         selectorSelected = accentedScheme.primary,
         selectorUnselected = cardSurface,
         uiBlurEnabled = uiBlurEnabled,
+        uiTransparency = clampedTransparency,
+        uiBlurRadiusDp = clampedBlurRadiusDp,
         frostedBorderColor = frostedBorder,
         dialogSurface = dialogSurface
     )

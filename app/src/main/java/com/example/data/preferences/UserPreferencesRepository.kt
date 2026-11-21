@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -36,6 +37,8 @@ class UserPreferencesRepository(private val context: Context) {
         val SHOW_SMOOTH_FADE = booleanPreferencesKey("show_smooth_fade")
         val DISABLE_CREATED_MARKER_LABELS = booleanPreferencesKey("disable_created_marker_labels")
         val UI_BLUR_ENABLED = booleanPreferencesKey("ui_blur_enabled")
+        val UI_TRANSPARENCY = floatPreferencesKey("ui_transparency")
+        val UI_BLUR_RADIUS_DP = floatPreferencesKey("ui_blur_radius_dp")
         val SHOW_LOCATION_OUTLINE = booleanPreferencesKey("show_location_outline")
         val MARKER_STYLE = stringPreferencesKey("marker_style")
         val ROUTING_MODE = stringPreferencesKey("routing_mode")
@@ -71,6 +74,8 @@ class UserPreferencesRepository(private val context: Context) {
             showSectorLabels = prefs[Keys.SHOW_SECTOR_LABELS] ?: false,
             smoothFadeEnabled = prefs[Keys.SHOW_SMOOTH_FADE] ?: true,
             uiBlurEnabled = prefs[Keys.UI_BLUR_ENABLED] ?: false,
+            uiTransparency = (prefs[Keys.UI_TRANSPARENCY] ?: 0.25f).coerceIn(0f, 0.85f),
+            uiBlurRadiusDp = (prefs[Keys.UI_BLUR_RADIUS_DP] ?: 20f).coerceIn(0f, 40f),
             showLocationOutline = prefs[Keys.SHOW_LOCATION_OUTLINE] ?: true,
             markerStyle = parsedMarkerStyle,
             routingMode = parsedRoutingMode
@@ -172,6 +177,14 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setUiBlurEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.UI_BLUR_ENABLED] = enabled }
+    }
+
+    suspend fun setUiTransparency(transparency: Float) {
+        context.dataStore.edit { it[Keys.UI_TRANSPARENCY] = transparency.coerceIn(0f, 0.85f) }
+    }
+
+    suspend fun setUiBlurRadiusDp(radiusDp: Float) {
+        context.dataStore.edit { it[Keys.UI_BLUR_RADIUS_DP] = radiusDp.coerceIn(0f, 40f) }
     }
 
     suspend fun setShowLocationOutline(show: Boolean) {

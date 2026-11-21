@@ -67,8 +67,8 @@ fun OfflineAreasDialog(
     var areaName by remember(offlineRegions.size) {
         mutableStateOf("Area ${offlineRegions.size + 1}")
     }
-    var selectedRadiusMeters by remember { mutableIntStateOf(2000) }
-    val radiusOptions = listOf(1000, 2000, 3000, 4000)
+    var selectedRadiusMeters by remember { mutableIntStateOf(5000) }
+    val radiusOptions = listOf(2000, 5000, 10_000, 20_000)
 
     AlertDialog(
         onDismissRequest = onDismiss,

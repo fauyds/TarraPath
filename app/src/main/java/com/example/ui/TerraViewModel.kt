@@ -298,24 +298,42 @@ class TerraViewModel(
                 telemetry.latitude,
                 telemetry.longitude
             )
-            // Filter GPS jitter (< 1.2m) and unrealistic jumps (> 300m in a single tick)
-            if (d in 1.2..300.0) {
+            val dtSec = ((telemetry.lastUpdatedAt - prev.lastUpdatedAt) / 1000.0).coerceAtLeast(0.5)
+            val impliedSpeedMps = d / dtSec
+            // Filter residual micro-drift (< 2.5m) and unrealistic walking speed spikes (> 8.5 m/s)
+            if (d >= 2.5 && d <= 200.0 && impliedSpeedMps <= 8.5) {
                 distDelta = d
+                lastRecordedTelemetry = telemetry
             }
+        } else {
+            lastRecordedTelemetry = telemetry
         }
-        lastRecordedTelemetry = telemetry
 
         updateWalkingRouteOnGpsFix(telemetry)
 
         if (_activeRecording.value.isRecording) {
             _activeRecording.update { state ->
                 val lastPt = state.points.lastOrNull()
-                val shouldAppendPoint = lastPt == null || GeoGrid.haversineMeters(
-                    lastPt.latitude,
-                    lastPt.longitude,
-                    telemetry.latitude,
-                    telemetry.longitude
-                ) >= 2.0
+                val distFromLastPt = if (lastPt == null) {
+                    Double.POSITIVE_INFINITY
+                } else {
+                    GeoGrid.haversineMeters(
+                        lastPt.latitude,
+                        lastPt.longitude,
+                        telemetry.latitude,
+                        telemetry.longitude
+                    )
+                }
+                val dtPtSec = if (lastPt == null || lastPt.timestamp <= 0L) {
+                    1.0
+                } else {
+                    ((telemetry.lastUpdatedAt - lastPt.timestamp) / 1000.0).coerceAtLeast(0.5)
+                }
+                val shouldAppendPoint = lastPt == null || (
+                    distFromLastPt >= 2.5 &&
+                        distFromLastPt <= 200.0 &&
+                        (distFromLastPt / dtPtSec) <= 8.5
+                    )
 
                 val newPoints = if (shouldAppendPoint) {
                     state.points + LatLonPoint(
@@ -553,6 +571,16 @@ class TerraViewModel(
                 label = place.title,
                 targetLat = place.latitude,
                 targetLon = place.longitude
+            )
+        )
+    }
+
+    fun startWalkingToCoordinate(label: String, latitude: Double, longitude: Double) {
+        activateWalkTarget(
+            WalkTarget.CustomPoint(
+                label = label.trim().ifEmpty { "Custom Pin" },
+                targetLat = latitude,
+                targetLon = longitude
             )
         )
     }
@@ -902,6 +930,14 @@ class TerraViewModel(
 
     fun setUiBlurEnabled(enabled: Boolean) {
         viewModelScope.launch { preferences.setUiBlurEnabled(enabled) }
+    }
+
+    fun setUiTransparency(transparency: Float) {
+        viewModelScope.launch { preferences.setUiTransparency(transparency) }
+    }
+
+    fun setUiBlurRadiusDp(radiusDp: Float) {
+        viewModelScope.launch { preferences.setUiBlurRadiusDp(radiusDp) }
     }
 
     fun setShowLocationOutline(show: Boolean) {

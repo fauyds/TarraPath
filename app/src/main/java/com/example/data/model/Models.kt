@@ -428,6 +428,12 @@ sealed interface WalkTarget {
         override val targetLat: Double,
         override val targetLon: Double
     ) : WalkTarget
+
+    data class CustomPoint(
+        override val label: String,
+        override val targetLat: Double,
+        override val targetLon: Double
+    ) : WalkTarget
 }
 
 data class WalkingRouteState(
@@ -464,6 +470,8 @@ data class MapDisplaySettings(
     val showSectorLabels: Boolean = false,
     val smoothFadeEnabled: Boolean = true,
     val uiBlurEnabled: Boolean = false,
+    val uiTransparency: Float = 0.25f,
+    val uiBlurRadiusDp: Float = 20f,
     val showLocationOutline: Boolean = true,
     val markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON,
     val routingMode: RoutingMode = RoutingMode.ONLINE

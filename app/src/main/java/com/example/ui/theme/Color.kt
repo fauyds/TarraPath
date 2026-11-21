@@ -97,6 +97,8 @@ data class ExpressiveColors(
     val selectorSelected: Color,
     val selectorUnselected: Color,
     val uiBlurEnabled: Boolean = false,
+    val uiTransparency: Float = 0.25f,
+    val uiBlurRadiusDp: Float = 20f,
     val frostedBorderColor: Color = Color.Transparent,
     val dialogSurface: Color = cardSurface
 )
@@ -111,6 +113,8 @@ val LocalExpressiveColors = staticCompositionLocalOf {
         selectorSelected = ForestPrimaryLight,
         selectorUnselected = LightCardSurface,
         uiBlurEnabled = false,
+        uiTransparency = 0.25f,
+        uiBlurRadiusDp = 20f,
         frostedBorderColor = Color.Transparent,
         dialogSurface = LightCardSurface
     )
