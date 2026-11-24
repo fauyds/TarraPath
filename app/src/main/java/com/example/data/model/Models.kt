@@ -486,7 +486,8 @@ data class MapDisplaySettings(
     val showLocationOutline: Boolean = true,
     val markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON,
     val routingMode: RoutingMode = RoutingMode.ONLINE,
-    val backgroundTrackingEnabled: Boolean = true
+    val backgroundTrackingEnabled: Boolean = true,
+    val snapToRoadsEnabled: Boolean = true
 )
 
 enum class ApiProvider(

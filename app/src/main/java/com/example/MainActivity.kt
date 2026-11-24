@@ -271,6 +271,7 @@ fun TerraPathApp(appContainer: AppContainer) {
         val offlineRegions by viewModel.offlineRegions.collectAsStateWithLifecycle()
         val offlineDownloadProgress by viewModel.offlineDownloadProgress.collectAsStateWithLifecycle()
         val isBackgroundServiceRunning by viewModel.isBackgroundServiceRunning.collectAsStateWithLifecycle()
+        val snappingRouteId by viewModel.snappingRouteId.collectAsStateWithLifecycle()
 
         val highlightedRoute = remember(allRoutes, highlightedRouteId) {
             allRoutes.firstOrNull { it.id == highlightedRouteId }
@@ -426,7 +427,9 @@ fun TerraPathApp(appContainer: AppContainer) {
                                     viewModel.downloadOfflineArea(name, lat, lon, radius, isDarkTheme)
                                 },
                                 onDeleteOfflineRegion = { region -> viewModel.deleteOfflineRegion(region) },
-                                onClearOfflineDownloadError = { viewModel.clearOfflineDownloadError() }
+                                onClearOfflineDownloadError = { viewModel.clearOfflineDownloadError() },
+                                isSnappingHighlightedRoute = highlightedRoute != null && snappingRouteId == highlightedRoute.id,
+                                onSnapHighlightedRouteToRoads = { routeId -> viewModel.snapRouteToRoads(routeId) }
                             )
                         }
 
@@ -471,6 +474,8 @@ fun TerraPathApp(appContainer: AppContainer) {
                                     navController.popBackStack()
                                     navigateToTab(ROUTE_EXPLORE)
                                 },
+                                isSnappingToRoads = snappingRouteId == routeId,
+                                onSnapToRoads = { id -> viewModel.snapRouteToRoads(id) },
                                 onDeleteRoute = { id -> viewModel.deleteRoute(id) }
                             )
                         }
@@ -515,6 +520,7 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onChangeUiTransparency = { viewModel.setUiTransparency(it) },
                                 onChangeUiBlurRadius = { viewModel.setUiBlurRadiusDp(it) },
                                 onToggleLocationOutline = { viewModel.setShowLocationOutline(it) },
+                                onToggleSnapToRoads = { viewModel.setSnapToRoadsEnabled(it) },
                                 onToggleBackgroundTracking = { viewModel.setBackgroundTrackingEnabled(it) },
                                 isBackgroundServiceRunning = isBackgroundServiceRunning,
                                 hasNotificationPermission = hasNotificationPerm,

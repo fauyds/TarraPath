@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Signpost
 import androidx.compose.material.icons.filled.Tag
@@ -136,6 +137,7 @@ fun SettingsScreen(
     onChangeUiTransparency: (Float) -> Unit = {},
     onChangeUiBlurRadius: (Float) -> Unit = {},
     onToggleLocationOutline: (Boolean) -> Unit,
+    onToggleSnapToRoads: (Boolean) -> Unit = {},
     onToggleBackgroundTracking: (Boolean) -> Unit = {},
     isBackgroundServiceRunning: Boolean = false,
     hasNotificationPermission: Boolean = true,
@@ -487,7 +489,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     val showNotifHint = mapSettings.backgroundTrackingEnabled && !hasNotificationPermission
-                    val cardCount = if (showNotifHint) 3 else 2
+                    val cardCount = if (showNotifHint) 4 else 3
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         SettingToggleCard(
                             icon = Icons.Filled.MyLocation,
@@ -499,6 +501,15 @@ fun SettingsScreen(
                             switchTestTag = "location_outline_switch"
                         )
                         SettingToggleCard(
+                            icon = Icons.Filled.Route,
+                            title = "Snap GPS to Roads",
+                            subtitle = "Keep your location dot and recorded paths aligned to streets and footpaths",
+                            checked = mapSettings.snapToRoadsEnabled,
+                            onCheckedChange = onToggleSnapToRoads,
+                            shape = groupedCardShape(1, cardCount),
+                            switchTestTag = "snap_to_roads_switch"
+                        )
+                        SettingToggleCard(
                             icon = Icons.Filled.Sensors,
                             title = "Keep Running in Background",
                             subtitle = if (isBackgroundServiceRunning) {
@@ -508,11 +519,11 @@ fun SettingsScreen(
                             },
                             checked = mapSettings.backgroundTrackingEnabled,
                             onCheckedChange = onToggleBackgroundTracking,
-                            shape = groupedCardShape(1, cardCount),
+                            shape = groupedCardShape(2, cardCount),
                             switchTestTag = "background_tracking_switch"
                         )
                         if (showNotifHint) {
-                            ExpressiveCard(shape = groupedCardShape(2, cardCount)) {
+                            ExpressiveCard(shape = groupedCardShape(3, cardCount)) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()

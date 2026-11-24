@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -185,6 +187,8 @@ fun ExploreScreen(
     onDownloadOfflineArea: (name: String, lat: Double, lon: Double, radiusMeters: Int) -> Unit = { _, _, _, _ -> },
     onDeleteOfflineRegion: (OfflineRegionEntity) -> Unit = {},
     onClearOfflineDownloadError: () -> Unit = {},
+    isSnappingHighlightedRoute: Boolean = false,
+    onSnapHighlightedRouteToRoads: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val initialCenter = remember(telemetry.hasFix, exploredChunks.size, highlightedRoutePoints.size) {
@@ -615,6 +619,30 @@ fun ExploreScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (!isSnappingHighlightedRoute) {
+                                    onSnapHighlightedRouteToRoads(highlightedRoute.id)
+                                }
+                            },
+                            enabled = !isSnappingHighlightedRoute,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("snap_highlighted_route")
+                        ) {
+                            if (isSnappingHighlightedRoute) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.AutoFixHigh,
+                                    contentDescription = "Align route to roads",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                         IconButton(
                             onClick = { onStartWalkingToTrackStart(highlightedRoute.id) },

@@ -32,6 +32,7 @@ class AppContainer(application: Application) {
         context = application,
         regionDao = database.offlineRegionDao()
     )
+    val roadSnapper = com.example.domain.RoadSnapper(offlineRegionManager)
     val repository = TerraRepository(
         chunkDao = database.chunkDao(),
         routeDao = database.routeDao(),
@@ -47,6 +48,7 @@ class AppContainer(application: Application) {
         compassHeadingTracker = compassHeadingTracker,
         walkingRouteService = walkingRouteService,
         offlineRegionManager = offlineRegionManager,
+        roadSnapper = roadSnapper,
         serviceController = AndroidBackgroundServiceController(application)
     )
 }

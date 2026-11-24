@@ -354,6 +354,16 @@ internal object NoLabelsVectorTileRenderer {
         }
     }
 
+    fun getCachedDecodedTile(z: Int, x: Int, y: Int): DecodedMvtTile? {
+        val cacheKey = "$z/$x/$y"
+        synchronized(decodedCache) {
+            return decodedCache.get(cacheKey)
+        }
+    }
+
+    fun getOrFetchDecodedTile(z: Int, x: Int, y: Int): DecodedMvtTile? =
+        loadOrFetchDecodedTile(z, x, y)
+
     private fun loadOrFetchDecodedTile(z: Int, x: Int, y: Int): DecodedMvtTile? {
         val cacheKey = "$z/$x/$y"
         synchronized(decodedCache) {

@@ -243,6 +243,29 @@ class OfflineRegionManager(
         )
     }
 
+    suspend fun snapToOfflineRoad(
+        lat: Double,
+        lon: Double,
+        maxSnapMeters: Double
+    ): com.example.data.model.LatLonPoint? = withContext(Dispatchers.Default) {
+        val regions = withContext(Dispatchers.IO) { regionDao.getAllRegionsOnce() }
+            .filter { it.covers(lat, lon) }
+            .sortedWith(compareBy<OfflineRegionEntity> { it.radiusMeters }.thenByDescending { it.downloadedAt })
+        if (regions.isEmpty()) return@withContext null
+
+        var bestPoint: com.example.data.model.LatLonPoint? = null
+        var bestDist = maxSnapMeters
+        for (region in regions) {
+            val graph = loadGraph(region.graphFileName) ?: continue
+            val snap = graph.findNearestEdgeSnap(lat, lon, bestDist) ?: continue
+            if (snap.distanceMeters <= bestDist) {
+                bestDist = snap.distanceMeters
+                bestPoint = com.example.data.model.LatLonPoint(snap.snapLat, snap.snapLon)
+            }
+        }
+        bestPoint
+    }
+
     private fun loadGraph(fileName: String): OfflineRoadGraph? {
         graphCache.get(fileName)?.let { return it }
         val file = File(regionsDir(), fileName)

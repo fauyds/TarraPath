@@ -25,6 +25,7 @@ import com.example.data.sensors.StepSensorEvent
 import com.example.data.sensors.StepSensorTracker
 import com.example.domain.GeoGrid
 import com.example.domain.OfflineRoadGraph
+import com.example.domain.RoadSnapper
 import com.example.domain.WalkingNavigationPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +65,7 @@ class TrackingCoordinator(
     private val compassHeadingTracker: CompassHeadingTracker? = null,
     private val walkingRouteService: WalkingRouteService = WalkingRouteService(),
     private val offlineRegionManager: OfflineRegionManager? = null,
+    private val roadSnapper: RoadSnapper = RoadSnapper(offlineRegionManager),
     private val serviceController: BackgroundServiceController = NoOpBackgroundServiceController,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 ) {
@@ -90,6 +92,9 @@ class TrackingCoordinator(
 
     private val _walkingRouteState = MutableStateFlow(WalkingRouteState())
     val walkingRouteState: StateFlow<WalkingRouteState> = _walkingRouteState.asStateFlow()
+
+    private val _snappingRouteId = MutableStateFlow<Long?>(null)
+    val snappingRouteId: StateFlow<Long?> = _snappingRouteId.asStateFlow()
 
     private val _unlockedToastQueue = MutableStateFlow<List<AchievementDefinition>>(emptyList())
     val activeAchievementBanner: StateFlow<AchievementDefinition?> = _unlockedToastQueue
@@ -240,10 +245,44 @@ class TrackingCoordinator(
         locationJob?.cancel()
         locationJob = scope.launch {
             locationTracker.observeLocationUpdates(true).collect { telemetry ->
-                latestGpsTelemetry = telemetry
+                // Avoid flashing back to "GPS Sync" if the location collector restarts while a valid fix is already cached
+                if (!telemetry.hasFix && latestGpsTelemetry.hasFix && telemetry.hasPermission) {
+                    return@collect
+                }
+
+                val effectiveTelemetry = if (telemetry.hasFix && mapDisplaySettings.value.snapToRoadsEnabled) {
+                    val headingHint = HeadingEstimator.resolveHeadingDegrees(
+                        compassDegrees = latestCompassHeadingDeg,
+                        gpsBearingDegrees = telemetry.bearingDegrees,
+                        speedKmh = telemetry.speedKmh
+                    )
+                    val snap = roadSnapper.snapPoint(
+                        latitude = telemetry.latitude,
+                        longitude = telemetry.longitude,
+                        accuracyMeters = telemetry.accuracyMeters,
+                        headingDegrees = headingHint,
+                        speedKmh = telemetry.speedKmh
+                    )
+                    if (snap.snappedToRoad) {
+                        telemetry.copy(
+                            latitude = snap.latitude,
+                            longitude = snap.longitude
+                        )
+                    } else {
+                        telemetry
+                    }
+                } else {
+                    if (!telemetry.hasFix) {
+                        roadSnapper.resetContinuity()
+                    }
+                    telemetry
+                }
+
+                latestGpsTelemetry = effectiveTelemetry
                 publishMergedTelemetry()
-                if (telemetry.hasFix) {
-                    processGpsFix(telemetry)
+                // Only advance sector unlocks & track points when fix is sharper than provisional coarse fallback
+                if (effectiveTelemetry.hasFix && effectiveTelemetry.accuracyMeters <= 45f) {
+                    processGpsFix(effectiveTelemetry)
                 }
             }
         }
@@ -820,10 +859,45 @@ class TrackingCoordinator(
         }
     }
 
+    fun snapRouteToRoads(routeId: Long) {
+        if (_snappingRouteId.value != null) return
+        _snappingRouteId.value = routeId
+        scope.launch {
+            try {
+                val rawPoints = repository.getRoutePointsOnce(routeId)
+                if (rawPoints.size >= 2) {
+                    val asDomain = rawPoints.map {
+                        LatLonPoint(
+                            latitude = it.latitude,
+                            longitude = it.longitude,
+                            speedKmh = it.speedKmh,
+                            timestamp = it.timestamp
+                        )
+                    }
+                    val snapped = roadSnapper.snapPolyline(asDomain)
+                    repository.replaceRoutePoints(routeId, snapped)
+                }
+            } finally {
+                if (_snappingRouteId.value == routeId) {
+                    _snappingRouteId.value = null
+                }
+            }
+        }
+    }
+
     fun setBackgroundTrackingEnabled(enabled: Boolean) {
         scope.launch {
             preferences.setBackgroundTrackingEnabled(enabled)
             syncTrackingAndServiceState()
+        }
+    }
+
+    fun setSnapToRoadsEnabled(enabled: Boolean) {
+        scope.launch {
+            preferences.setSnapToRoadsEnabled(enabled)
+            if (!enabled) {
+                roadSnapper.resetContinuity()
+            }
         }
     }
 }

@@ -80,6 +80,7 @@ class TerraViewModel(
     val pendingRouteSummary: StateFlow<PendingRouteSummary?> = trackingCoordinator.pendingRouteSummary
     val highlightedRouteId: StateFlow<Long?> = trackingCoordinator.highlightedRouteId
     val walkingRouteState: StateFlow<WalkingRouteState> = trackingCoordinator.walkingRouteState
+    val snappingRouteId: StateFlow<Long?> = trackingCoordinator.snappingRouteId
     val activeAchievementBanner: StateFlow<AchievementDefinition?> = trackingCoordinator.activeAchievementBanner
     val isBackgroundServiceRunning: StateFlow<Boolean> = trackingCoordinator.isBackgroundServiceRunning
 
@@ -210,6 +211,10 @@ class TerraViewModel(
 
     fun highlightRouteOnMap(routeId: Long?) {
         trackingCoordinator.highlightRouteOnMap(routeId)
+    }
+
+    fun snapRouteToRoads(routeId: Long) {
+        trackingCoordinator.snapRouteToRoads(routeId)
     }
 
     fun startWalkingToMarker(marker: MapMarkerEntity) {
@@ -388,6 +393,10 @@ class TerraViewModel(
 
     fun setBackgroundTrackingEnabled(enabled: Boolean) {
         trackingCoordinator.setBackgroundTrackingEnabled(enabled)
+    }
+
+    fun setSnapToRoadsEnabled(enabled: Boolean) {
+        trackingCoordinator.setSnapToRoadsEnabled(enabled)
     }
 
     fun setMarkerStyle(style: MarkerStyle) {

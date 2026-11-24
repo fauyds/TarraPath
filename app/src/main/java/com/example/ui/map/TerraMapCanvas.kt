@@ -950,11 +950,25 @@ private class TerraOsmOverlay(
             canvas.restore()
         }
 
-        // 6. Live User GPS Puck + Direction Arrow
+        // 6. Live User GPS Puck + Accuracy Ring + Direction Arrow
         if (telemetry.hasFix) {
             proj.toPixels(GeoPoint(telemetry.latitude, telemetry.longitude), tmpPt1)
             val ux = tmpPt1.x.toFloat()
             val uy = tmpPt1.y.toFloat()
+
+            if (telemetry.accuracyMeters > 10f) {
+                val latOffsetDeg = telemetry.accuracyMeters / 111_320.0
+                proj.toPixels(GeoPoint(telemetry.latitude + latOffsetDeg, telemetry.longitude), tmpPt2)
+                val accuracyRadiusPx = hypot(
+                    (tmpPt2.x - tmpPt1.x).toFloat(),
+                    (tmpPt2.y - tmpPt1.y).toFloat()
+                ).coerceIn(14f * density, 160f * density)
+                fillPaint.color = palette.route.copy(alpha = 0.10f).toArgb()
+                canvas.drawCircle(ux, uy, accuracyRadiusPx, fillPaint)
+                strokePaint.color = palette.route.copy(alpha = 0.28f).toArgb()
+                strokePaint.strokeWidth = 1.2f * density
+                canvas.drawCircle(ux, uy, accuracyRadiusPx, strokePaint)
+            }
 
             val pulseRadius = (10f + pulseProgress * 22f) * density
             fillPaint.color = palette.route.copy(alpha = (1f - pulseProgress) * 0.35f).toArgb()

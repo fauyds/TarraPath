@@ -262,6 +262,42 @@ class TerraRepository(
         routeDao.deleteRouteById(routeId)
     }
 
+    suspend fun replaceRoutePoints(routeId: Long, points: List<LatLonPoint>): Boolean {
+        val existing = routeDao.getRouteByIdOnce(routeId) ?: return false
+        if (points.isEmpty()) return false
+        routeDao.deletePointsForRoute(routeId)
+        val entities = points.mapIndexed { index, pt ->
+            RoutePointEntity(
+                routeId = routeId,
+                orderIndex = index,
+                latitude = pt.latitude,
+                longitude = pt.longitude,
+                speedKmh = pt.speedKmh,
+                timestamp = pt.timestamp
+            )
+        }
+        routeDao.insertRoutePoints(entities)
+
+        val newDistance = if (points.size >= 2) {
+            com.example.domain.OfflineRoadGraph.polylineDistanceMeters(points)
+        } else {
+            existing.distanceMeters
+        }
+        val hours = existing.durationMillis / 3_600_000.0
+        val newAvgSpeed = if (hours > 0.0 && newDistance > 0.0) {
+            (newDistance / 1000.0 / hours).toFloat()
+        } else {
+            existing.avgSpeedKmh
+        }
+        routeDao.updateRoute(
+            existing.copy(
+                distanceMeters = newDistance,
+                avgSpeedKmh = newAvgSpeed
+            )
+        )
+        return true
+    }
+
     suspend fun addMarker(
         title: String,
         note: String,

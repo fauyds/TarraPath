@@ -39,6 +39,9 @@ interface RouteDao {
     @Query("SELECT * FROM routes WHERE id = :routeId")
     fun observeRouteById(routeId: Long): Flow<RouteEntity?>
 
+    @Query("SELECT * FROM routes WHERE id = :routeId")
+    suspend fun getRouteByIdOnce(routeId: Long): RouteEntity?
+
     @Query("SELECT * FROM route_points WHERE routeId = :routeId ORDER BY orderIndex ASC")
     fun observePointsForRoute(routeId: Long): Flow<List<RoutePointEntity>>
 
@@ -48,8 +51,14 @@ interface RouteDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRoute(route: RouteEntity): Long
 
+    @Update
+    suspend fun updateRoute(route: RouteEntity)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRoutePoints(points: List<RoutePointEntity>)
+
+    @Query("DELETE FROM route_points WHERE routeId = :routeId")
+    suspend fun deletePointsForRoute(routeId: Long)
 
     @Query("DELETE FROM routes WHERE id = :routeId")
     suspend fun deleteRouteById(routeId: Long)

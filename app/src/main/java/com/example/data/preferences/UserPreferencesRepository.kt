@@ -43,6 +43,7 @@ class UserPreferencesRepository(private val context: Context) {
         val MARKER_STYLE = stringPreferencesKey("marker_style")
         val ROUTING_MODE = stringPreferencesKey("routing_mode")
         val BACKGROUND_TRACKING_ENABLED = booleanPreferencesKey("background_tracking_enabled")
+        val SNAP_TO_ROADS_ENABLED = booleanPreferencesKey("snap_to_roads_enabled")
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
@@ -80,7 +81,8 @@ class UserPreferencesRepository(private val context: Context) {
             showLocationOutline = prefs[Keys.SHOW_LOCATION_OUTLINE] ?: true,
             markerStyle = parsedMarkerStyle,
             routingMode = parsedRoutingMode,
-            backgroundTrackingEnabled = prefs[Keys.BACKGROUND_TRACKING_ENABLED] ?: true
+            backgroundTrackingEnabled = prefs[Keys.BACKGROUND_TRACKING_ENABLED] ?: true,
+            snapToRoadsEnabled = prefs[Keys.SNAP_TO_ROADS_ENABLED] ?: true
         )
     }
 
@@ -203,5 +205,9 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setBackgroundTrackingEnabled(enabled: Boolean) {
         context.dataStore.edit { it[Keys.BACKGROUND_TRACKING_ENABLED] = enabled }
+    }
+
+    suspend fun setSnapToRoadsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SNAP_TO_ROADS_ENABLED] = enabled }
     }
 }

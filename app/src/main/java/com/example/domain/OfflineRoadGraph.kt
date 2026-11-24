@@ -206,7 +206,7 @@ class OfflineRoadGraph(
         )
     }
 
-    private fun findNearestEdgeSnap(
+    internal fun findNearestEdgeSnap(
         lat: Double,
         lon: Double,
         maxSnapMeters: Double
@@ -283,7 +283,7 @@ class OfflineRoadGraph(
         }
     }
 
-    private data class EdgeSnapResult(
+    internal data class EdgeSnapResult(
         val nodeA: Int,
         val nodeB: Int,
         val snapLat: Double,

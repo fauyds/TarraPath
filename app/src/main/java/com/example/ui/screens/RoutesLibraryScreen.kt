@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Directions
@@ -514,6 +515,8 @@ fun RouteDetailScreen(
     onBack: () -> Unit,
     onShowOnExploreMap: (Long) -> Unit,
     onWalkToStart: (Long) -> Unit = {},
+    isSnappingToRoads: Boolean = false,
+    onSnapToRoads: (Long) -> Unit = {},
     onDeleteRoute: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -671,24 +674,34 @@ fun RouteDetailScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             ExpressivePillButton(
+                                text = if (isSnappingToRoads) "Aligning…" else "Align to Roads",
+                                icon = Icons.Filled.AutoFixHigh,
+                                subtle = true,
+                                enabled = !isSnappingToRoads,
+                                onClick = { onSnapToRoads(route.id) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("detail_snap_to_roads_button")
+                            )
+                            ExpressivePillButton(
                                 text = "Show on Map",
                                 icon = Icons.Filled.Map,
                                 subtle = true,
                                 onClick = { onShowOnExploreMap(route.id) },
                                 modifier = Modifier.weight(1f)
                             )
-                            ExpressivePillButton(
-                                text = "Delete",
-                                icon = Icons.Filled.Delete,
-                                onClick = {
-                                    onDeleteRoute(route.id)
-                                    onBack()
-                                },
-                                containerColorOverride = MaterialTheme.colorScheme.errorContainer,
-                                contentColorOverride = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.weight(1f)
-                            )
                         }
+                        ExpressivePillButton(
+                            text = "Delete",
+                            icon = Icons.Filled.Delete,
+                            onClick = {
+                                onDeleteRoute(route.id)
+                                onBack()
+                            },
+                            containerColorOverride = MaterialTheme.colorScheme.errorContainer,
+                            contentColorOverride = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }

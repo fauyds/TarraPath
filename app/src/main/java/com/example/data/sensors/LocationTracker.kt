@@ -3,6 +3,7 @@ package com.example.data.sensors
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import android.os.Looper
 import android.os.SystemClock
@@ -14,6 +15,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -114,8 +116,9 @@ object SpeedEstimator {
 }
 
 open class LocationTracker(context: Context) {
+    private val appContext: Context = context.applicationContext
     private val fusedClient: FusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(context.applicationContext)
+        LocationServices.getFusedLocationProviderClient(appContext)
 
     @SuppressLint("MissingPermission")
     open fun observeLocationUpdates(hasPermission: Boolean): Flow<LocationTelemetry> = callbackFlow {
@@ -133,6 +136,7 @@ open class LocationTracker(context: Context) {
         var lastValidBearingDeg: Float? = null
         var lastFixReceivedRealtimeMs = 0L
         var lastEmittedTelemetry: LocationTelemetry? = null
+        var emittedProvisionalFix = false
 
         fun Location.toElapsedMs(): Long = if (elapsedRealtimeNanos > 0L) {
             elapsedRealtimeNanos / 1_000_000L
@@ -177,7 +181,34 @@ open class LocationTracker(context: Context) {
                     wallTimeMs = wallTime,
                     isCached = isCached
                 )
-            ) ?: return
+            )
+            if (filtered == null) {
+                // Before high-confidence lock arrives, show a provisional puck for coarse cold-start fixes
+                // instead of staying stuck on "GPS Sync" indoors or under tall buildings.
+                val cachedAgeMs = SystemClock.elapsedRealtime() - elapsedMs
+                val allowProvisional = previousSample == null &&
+                    !emittedProvisionalFix &&
+                    !location.accuracy.isNaN() &&
+                    location.accuracy in 1f..85f &&
+                    (!isCached || cachedAgeMs <= 30 * 60_000L)
+                if (allowProvisional) {
+                    emittedProvisionalFix = true
+                    val provisional = LocationTelemetry(
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        speedKmh = 0f,
+                        accuracyMeters = location.accuracy,
+                        bearingDegrees = null,
+                        headingDegrees = null,
+                        hasFix = true,
+                        hasPermission = true,
+                        lastUpdatedAt = wallTime
+                    )
+                    lastEmittedTelemetry = provisional
+                    trySend(provisional)
+                }
+                return
+            }
 
             val filteredSample = SpeedFixSample(
                 latitude = filtered.latitude,
@@ -264,11 +295,35 @@ open class LocationTracker(context: Context) {
             }
         }
 
+        val currentLocCancellation = CancellationTokenSource()
+
+        // 1. Query cached fused location
         fusedClient.lastLocation.addOnSuccessListener { cached ->
             if (cached != null) {
                 emitLocation(cached, isCached = true)
+            } else {
+                // Fallback to platform LocationManager providers if Play Services cache is empty
+                runCatching {
+                    val lm = appContext.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                    val candidates = listOfNotNull(
+                        lm?.getLastKnownLocation(LocationManager.GPS_PROVIDER),
+                        lm?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    )
+                    val best = candidates.maxByOrNull { it.elapsedRealtimeNanos }
+                    if (best != null) {
+                        emitLocation(best, isCached = true)
+                    }
+                }
             }
         }
+
+        // 2. Actively request an immediate fresh high-accuracy fix for cold start
+        fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, currentLocCancellation.token)
+            .addOnSuccessListener { fresh ->
+                if (fresh != null) {
+                    emitLocation(fresh, isCached = false)
+                }
+            }
 
         // Keep cadence continuous even in background/pocket so sectors unlock reliably
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
@@ -299,6 +354,7 @@ open class LocationTracker(context: Context) {
         fusedClient.requestLocationUpdates(request, callback, Looper.getMainLooper())
 
         awaitClose {
+            currentLocCancellation.cancel()
             watchdogJob.cancel()
             fusedClient.removeLocationUpdates(callback)
         }
