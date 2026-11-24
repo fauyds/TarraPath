@@ -67,4 +67,20 @@ class GeoGridTest {
         assertTrue("Expected ~250m height, got $heightMeters", heightMeters in 245.0..255.0)
         assertTrue("Expected ~250m width, got $widthMeters", widthMeters in 245.0..255.0)
     }
+
+    @Test
+    fun chunksAlongSegment_unlocksIntermediateSectorsAndSkipsTeleports() {
+        val startLat = 37.7749
+        val startLon = -122.4194
+        // Move ~3 chunks North (~750m)
+        val endLat = startLat + GeoGrid.CHUNK_SIZE_DEG_LAT * 3.0
+        val chunks = GeoGrid.chunksAlongSegment(startLat, startLon, endLat, startLon)
+        assertEquals(4, chunks.size)
+
+        // Teleport > 2500m away should only return endpoint chunk, not interpolate across whole city
+        val farLat = startLat + 0.05 // ~5.5 km
+        val farChunks = GeoGrid.chunksAlongSegment(startLat, startLon, farLat, startLon)
+        assertEquals(1, farChunks.size)
+        assertEquals(GeoGrid.latLonToChunk(farLat, startLon), farChunks.first())
+    }
 }

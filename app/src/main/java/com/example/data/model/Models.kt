@@ -460,6 +460,17 @@ data class OfflineDownloadProgress(
     val errorMessage: String? = null
 )
 
+data class PendingRouteSummary(
+    val distanceMeters: Double,
+    val durationMillis: Long,
+    val avgSpeedKmh: Float,
+    val maxSpeedKmh: Float,
+    val chunksUnlocked: Int,
+    val startedAt: Long,
+    val endedAt: Long,
+    val points: List<LatLonPoint>
+)
+
 data class MapDisplaySettings(
     val easyModeEnabled: Boolean = false,
     val showGridLines: Boolean = true,
@@ -474,7 +485,8 @@ data class MapDisplaySettings(
     val uiBlurRadiusDp: Float = 20f,
     val showLocationOutline: Boolean = true,
     val markerStyle: MarkerStyle = MarkerStyle.CIRCLE_ICON,
-    val routingMode: RoutingMode = RoutingMode.ONLINE
+    val routingMode: RoutingMode = RoutingMode.ONLINE,
+    val backgroundTrackingEnabled: Boolean = true
 )
 
 enum class ApiProvider(

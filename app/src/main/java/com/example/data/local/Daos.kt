@@ -15,11 +15,17 @@ interface ChunkDao {
     @Query("SELECT COUNT(*) FROM explored_chunks")
     fun observeTotalChunkCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM explored_chunks")
+    suspend fun getTotalChunkCountOnce(): Int
+
     @Query("SELECT COUNT(*) FROM explored_chunks WHERE districtKey = :districtKey")
     fun observeDistrictUnlockedCount(districtKey: String): Flow<Int>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertChunk(chunk: ExploredChunkEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertChunks(chunks: List<ExploredChunkEntity>): List<Long>
 
     @Query("SELECT EXISTS(SELECT 1 FROM explored_chunks WHERE chunkKey = :chunkKey)")
     suspend fun isChunkExplored(chunkKey: String): Boolean

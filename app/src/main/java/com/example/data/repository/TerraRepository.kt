@@ -31,6 +31,7 @@ class TerraRepository(
 ) {
     val exploredChunks: Flow<List<ExploredChunkEntity>> = chunkDao.observeAllChunks()
     val totalChunkCount: Flow<Int> = chunkDao.observeTotalChunkCount()
+    suspend fun getTotalChunkCountOnce(): Int = chunkDao.getTotalChunkCountOnce()
     val allRoutes: Flow<List<RouteEntity>> = routeDao.observeAllRoutes()
     val allMarkers: Flow<List<MapMarkerEntity>> = markerDao.observeAllMarkers()
     val achievementUnlocks: Flow<List<AchievementUnlockEntity>> = achievementDao.observeAllUnlocks()
@@ -129,6 +130,41 @@ class TerraRepository(
             )
         )
         return rowId != -1L
+    }
+
+    /**
+     * Unlocks all sectors along the segment (startLat, startLon) -> (endLat, endLon) when
+     * [interpolateSegment] is true, or only the destination sector otherwise.
+     * Returns the count of newly unlocked sectors.
+     */
+    suspend fun unlockChunksAlongSegment(
+        startLat: Double,
+        startLon: Double,
+        endLat: Double,
+        endLon: Double,
+        interpolateSegment: Boolean = true
+    ): Int {
+        val coords = if (interpolateSegment) {
+            GeoGrid.chunksAlongSegment(startLat, startLon, endLat, endLon)
+        } else {
+            listOf(GeoGrid.latLonToChunk(endLat, endLon))
+        }
+        val now = System.currentTimeMillis()
+        val entities = coords.map { coord ->
+            val district = GeoGrid.chunkToDistrict(coord.cx, coord.cy)
+            val (centerLat, centerLon) = GeoGrid.chunkCenter(coord.cx, coord.cy)
+            ExploredChunkEntity(
+                chunkKey = coord.key,
+                chunkX = coord.cx,
+                chunkY = coord.cy,
+                districtKey = district.key,
+                centerLat = centerLat,
+                centerLon = centerLon,
+                unlockedAt = now
+            )
+        }
+        val rowIds = chunkDao.insertChunks(entities)
+        return rowIds.count { it != -1L }
     }
 
     suspend fun recordTelemetryProgress(

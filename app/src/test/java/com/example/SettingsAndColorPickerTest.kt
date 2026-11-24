@@ -238,6 +238,7 @@ class SettingsAndColorPickerTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val prefs = UserPreferencesRepository(context)
 
+        assertTrue(com.example.data.model.MapDisplaySettings().backgroundTrackingEnabled)
         assertTrue(prefs.mapDisplaySettings.first().showLocationOutline)
 
         prefs.setShowStreetNames(false)
@@ -245,24 +246,28 @@ class SettingsAndColorPickerTest {
         prefs.setShowSearchLabels(false)
         prefs.setShowSectorLabels(true)
         prefs.setShowLocationOutline(false)
+        prefs.setBackgroundTrackingEnabled(false)
         val labelDisabled = prefs.mapDisplaySettings.first()
         assertTrue(!labelDisabled.showStreetNames)
         assertTrue(!labelDisabled.showMarkerLabels)
         assertTrue(!labelDisabled.showSearchLabels)
         assertTrue(labelDisabled.showSectorLabels)
         assertTrue(!labelDisabled.showLocationOutline)
+        assertTrue(!labelDisabled.backgroundTrackingEnabled)
 
         prefs.setShowStreetNames(true)
         prefs.setShowMarkerLabels(true)
         prefs.setShowSearchLabels(true)
         prefs.setShowSectorLabels(false)
         prefs.setShowLocationOutline(true)
+        prefs.setBackgroundTrackingEnabled(true)
         val restored = prefs.mapDisplaySettings.first()
         assertTrue(restored.showStreetNames)
         assertTrue(restored.showMarkerLabels)
         assertTrue(restored.showSearchLabels)
         assertTrue(!restored.showSectorLabels)
         assertTrue(restored.showLocationOutline)
+        assertTrue(restored.backgroundTrackingEnabled)
     }
 
     @Test

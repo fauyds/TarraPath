@@ -10,4 +10,6 @@
     <string name="search_places_hint">Search places, streets, or pins…</string>
     <string name="search_empty_results">No matching places found</string>
     <string name="search_error_retry">Could not reach OpenStreetMap search. Check connection and try again.</string>
+    <string name="tracking_channel_name">Background Exploration &amp; Navigation</string>
+    <string name="tracking_channel_description">Keeps live GPS exploration, route recording, and walking navigation active in the background.</string>
 </resources>

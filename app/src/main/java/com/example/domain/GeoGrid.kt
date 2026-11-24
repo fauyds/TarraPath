@@ -44,6 +44,40 @@ object GeoGrid {
         return lat to lon
     }
 
+    /**
+     * Returns all distinct chunks intersected along the straight segment from (startLat, startLon)
+     * to (endLat, endLon) when distance is within [maxInterpolationMeters], or just the endpoint
+     * chunk otherwise (e.g. cold-start teleport across distant cities).
+     */
+    fun chunksAlongSegment(
+        startLat: Double,
+        startLon: Double,
+        endLat: Double,
+        endLon: Double,
+        maxInterpolationMeters: Double = 2500.0
+    ): List<ChunkCoord> {
+        val endChunk = latLonToChunk(endLat, endLon)
+        val distMeters = haversineMeters(startLat, startLon, endLat, endLon)
+        if (distMeters <= 1.0 || distMeters > maxInterpolationMeters) {
+            return listOf(endChunk)
+        }
+        val startChunk = latLonToChunk(startLat, startLon)
+        if (startChunk == endChunk) {
+            return listOf(endChunk)
+        }
+        val steps = kotlin.math.ceil(distMeters / 35.0).toInt().coerceIn(2, 250)
+        val seen = LinkedHashMap<String, ChunkCoord>()
+        for (i in 0..steps) {
+            val t = i.toDouble() / steps.toDouble()
+            val lat = startLat + (endLat - startLat) * t
+            val lon = startLon + (endLon - startLon) * t
+            val coord = latLonToChunk(lat, lon)
+            seen[coord.key] = coord
+        }
+        seen[endChunk.key] = endChunk
+        return seen.values.toList()
+    }
+
     fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val earthRadius = 6371000.0
         val dLat = Math.toRadians(lat2 - lat1)

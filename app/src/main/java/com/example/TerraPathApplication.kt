@@ -11,6 +11,8 @@ import com.example.data.repository.TerraRepository
 import com.example.data.sensors.CompassHeadingTracker
 import com.example.data.sensors.LocationTracker
 import com.example.data.sensors.StepSensorTracker
+import com.example.service.AndroidBackgroundServiceController
+import com.example.service.TrackingCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +38,16 @@ class AppContainer(application: Application) {
         markerDao = database.markerDao(),
         paletteDao = database.paletteDao(),
         achievementDao = database.achievementDao()
+    )
+    val trackingCoordinator = TrackingCoordinator(
+        repository = repository,
+        preferences = preferences,
+        locationTracker = locationTracker,
+        stepSensorTracker = stepSensorTracker,
+        compassHeadingTracker = compassHeadingTracker,
+        walkingRouteService = walkingRouteService,
+        offlineRegionManager = offlineRegionManager,
+        serviceController = AndroidBackgroundServiceController(application)
     )
 }
 

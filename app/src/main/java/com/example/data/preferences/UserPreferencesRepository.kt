@@ -42,6 +42,7 @@ class UserPreferencesRepository(private val context: Context) {
         val SHOW_LOCATION_OUTLINE = booleanPreferencesKey("show_location_outline")
         val MARKER_STYLE = stringPreferencesKey("marker_style")
         val ROUTING_MODE = stringPreferencesKey("routing_mode")
+        val BACKGROUND_TRACKING_ENABLED = booleanPreferencesKey("background_tracking_enabled")
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
@@ -78,7 +79,8 @@ class UserPreferencesRepository(private val context: Context) {
             uiBlurRadiusDp = (prefs[Keys.UI_BLUR_RADIUS_DP] ?: 20f).coerceIn(0f, 40f),
             showLocationOutline = prefs[Keys.SHOW_LOCATION_OUTLINE] ?: true,
             markerStyle = parsedMarkerStyle,
-            routingMode = parsedRoutingMode
+            routingMode = parsedRoutingMode,
+            backgroundTrackingEnabled = prefs[Keys.BACKGROUND_TRACKING_ENABLED] ?: true
         )
     }
 
@@ -197,5 +199,9 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun setRoutingMode(mode: RoutingMode) {
         context.dataStore.edit { it[Keys.ROUTING_MODE] = mode.name }
+    }
+
+    suspend fun setBackgroundTrackingEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.BACKGROUND_TRACKING_ENABLED] = enabled }
     }
 }

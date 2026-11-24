@@ -41,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +59,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -162,15 +166,33 @@ fun TerraPathApp(appContainer: AppContainer) {
             }
         }
 
+        fun checkNotificationPerm(): Boolean {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        }
+
         var hasLocationPerm by remember { mutableStateOf(checkLocationPerm()) }
         var hasActivityPerm by remember { mutableStateOf(checkActivityPerm()) }
+        var hasNotificationPerm by remember { mutableStateOf(checkNotificationPerm()) }
 
         val permissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
         ) { _ ->
             hasLocationPerm = checkLocationPerm()
             hasActivityPerm = checkActivityPerm()
+            hasNotificationPerm = checkNotificationPerm()
             viewModel.updatePermissions(hasLocationPerm, hasActivityPerm)
+        }
+
+        val notificationPermissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            hasNotificationPerm = granted || checkNotificationPerm()
         }
 
         fun launchPermissionRequest() {
@@ -180,14 +202,43 @@ fun TerraPathApp(appContainer: AppContainer) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     add(Manifest.permission.ACTIVITY_RECOGNITION)
                 }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    add(Manifest.permission.POST_NOTIFICATIONS)
+                }
             }.toTypedArray()
             permissionLauncher.launch(perms)
         }
 
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_START, Lifecycle.Event.ON_RESUME -> {
+                        hasLocationPerm = checkLocationPerm()
+                        hasActivityPerm = checkActivityPerm()
+                        hasNotificationPerm = checkNotificationPerm()
+                        viewModel.updatePermissions(hasLocationPerm, hasActivityPerm)
+                        viewModel.setForegroundUiActive(true)
+                    }
+                    Lifecycle.Event.ON_STOP -> {
+                        viewModel.setForegroundUiActive(false)
+                    }
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
+        }
+
         LaunchedEffect(Unit) {
             viewModel.updatePermissions(hasLocationPerm, hasActivityPerm)
+            viewModel.setForegroundUiActive(true)
             if (!hasLocationPerm) {
                 launchPermissionRequest()
+            } else if (!hasNotificationPerm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
 
@@ -219,6 +270,7 @@ fun TerraPathApp(appContainer: AppContainer) {
         val walkingRouteState by viewModel.walkingRouteState.collectAsStateWithLifecycle()
         val offlineRegions by viewModel.offlineRegions.collectAsStateWithLifecycle()
         val offlineDownloadProgress by viewModel.offlineDownloadProgress.collectAsStateWithLifecycle()
+        val isBackgroundServiceRunning by viewModel.isBackgroundServiceRunning.collectAsStateWithLifecycle()
 
         val highlightedRoute = remember(allRoutes, highlightedRouteId) {
             allRoutes.firstOrNull { it.id == highlightedRouteId }
@@ -463,6 +515,14 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onChangeUiTransparency = { viewModel.setUiTransparency(it) },
                                 onChangeUiBlurRadius = { viewModel.setUiBlurRadiusDp(it) },
                                 onToggleLocationOutline = { viewModel.setShowLocationOutline(it) },
+                                onToggleBackgroundTracking = { viewModel.setBackgroundTrackingEnabled(it) },
+                                isBackgroundServiceRunning = isBackgroundServiceRunning,
+                                hasNotificationPermission = hasNotificationPerm,
+                                onRequestNotificationPermission = {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                },
                                 onSelectMarkerStyle = { viewModel.setMarkerStyle(it) },
                                 offlineRegions = offlineRegions,
                                 offlineDownloadProgress = offlineDownloadProgress,

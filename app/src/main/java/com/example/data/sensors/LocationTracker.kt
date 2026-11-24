@@ -113,12 +113,12 @@ object SpeedEstimator {
     }
 }
 
-class LocationTracker(context: Context) {
+open class LocationTracker(context: Context) {
     private val fusedClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context.applicationContext)
 
     @SuppressLint("MissingPermission")
-    fun observeLocationUpdates(hasPermission: Boolean): Flow<LocationTelemetry> = callbackFlow {
+    open fun observeLocationUpdates(hasPermission: Boolean): Flow<LocationTelemetry> = callbackFlow {
         if (!hasPermission) {
             trySend(LocationTelemetry(hasFix = false, hasPermission = false))
             awaitClose { }
@@ -270,15 +270,29 @@ class LocationTracker(context: Context) {
             }
         }
 
-        // Keep cadence continuous even when user pauses/stops so speed returns cleanly to 0.0 km/h
+        // Keep cadence continuous even in background/pocket so sectors unlock reliably
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
             .setMinUpdateIntervalMillis(1000L)
             .setMaxUpdateDelayMillis(1500L)
+            .setMinUpdateDistanceMeters(0f)
+            .setWaitForAccurateLocation(false)
             .build()
 
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { emitLocation(it, isCached = false) }
+                val fixes = result.locations
+                if (fixes.isNotEmpty()) {
+                    val ordered = if (fixes.size > 1) {
+                        fixes.sortedBy { it.elapsedRealtimeNanos }
+                    } else {
+                        fixes
+                    }
+                    for (loc in ordered) {
+                        emitLocation(loc, isCached = false)
+                    }
+                } else {
+                    result.lastLocation?.let { emitLocation(it, isCached = false) }
+                }
             }
         }
 

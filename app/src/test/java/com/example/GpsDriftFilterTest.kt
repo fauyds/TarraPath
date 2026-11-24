@@ -199,4 +199,71 @@ class GpsDriftFilterTest {
         val progressFraction = (turnEast.longitude - north2.longitude) / (targetTurnLon - north2.longitude)
         assertTrue("Expected sharp turn gain >= 0.70, got $progressFraction", progressFraction >= 0.70)
     }
+
+    @Test
+    fun recoversAfterContinuousRelocationFasterThanWalkingAndSupportsPocketFallback() {
+        val filter = GpsDriftFilter()
+        val startLat = 37.77500
+        val startLon = -122.41900
+
+        assertNotNull(
+            filter.process(
+                RawGpsFix(
+                    latitude = startLat,
+                    longitude = startLon,
+                    accuracyMeters = 6f,
+                    elapsedRealtimeMs = 1_000L,
+                    wallTimeMs = 1_000L
+                )
+            )
+        )
+
+        // Simulate continuous movement at ~15 m/s (30m every 2s): first 2 fixes wait for confirmation, 3rd re-anchors
+        assertNull(
+            filter.process(
+                RawGpsFix(
+                    latitude = startLat + 0.00027, // ~30m North
+                    longitude = startLon,
+                    accuracyMeters = 8f,
+                    elapsedRealtimeMs = 3_000L,
+                    wallTimeMs = 3_000L
+                )
+            )
+        )
+        assertNull(
+            filter.process(
+                RawGpsFix(
+                    latitude = startLat + 0.00054, // ~60m North
+                    longitude = startLon,
+                    accuracyMeters = 8f,
+                    elapsedRealtimeMs = 5_000L,
+                    wallTimeMs = 5_000L
+                )
+            )
+        )
+        val reanchored = filter.process(
+            RawGpsFix(
+                latitude = startLat + 0.00081, // ~90m North
+                longitude = startLon,
+                accuracyMeters = 8f,
+                elapsedRealtimeMs = 7_000L,
+                wallTimeMs = 7_000L
+            )
+        )
+        assertNotNull(reanchored)
+        assertEquals(startLat + 0.00081, reanchored!!.latitude, 1e-6)
+
+        // After >5s crisp-fix drought, moderate 22m pocket GPS accuracy is accepted so background sector unlocking continues
+        val pocketFix = filter.process(
+            RawGpsFix(
+                latitude = reanchored.latitude + 0.00025, // ~28m North
+                longitude = startLon,
+                accuracyMeters = 22f,
+                elapsedRealtimeMs = 15_000L,
+                wallTimeMs = 15_000L
+            )
+        )
+        assertNotNull(pocketFix)
+        assertTrue(pocketFix!!.acceptedForMovement)
+    }
 }

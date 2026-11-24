@@ -37,8 +37,10 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LocationSearching
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Signpost
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.TouchApp
@@ -134,6 +136,10 @@ fun SettingsScreen(
     onChangeUiTransparency: (Float) -> Unit = {},
     onChangeUiBlurRadius: (Float) -> Unit = {},
     onToggleLocationOutline: (Boolean) -> Unit,
+    onToggleBackgroundTracking: (Boolean) -> Unit = {},
+    isBackgroundServiceRunning: Boolean = false,
+    hasNotificationPermission: Boolean = true,
+    onRequestNotificationPermission: () -> Unit = {},
     onSelectMarkerStyle: (MarkerStyle) -> Unit,
     offlineRegions: List<OfflineRegionEntity> = emptyList(),
     offlineDownloadProgress: OfflineDownloadProgress = OfflineDownloadProgress(),
@@ -472,23 +478,84 @@ fun SettingsScreen(
                 }
             }
 
-            // Location Indicator Toggle
+            // Location & Background Operation
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Location Indicator",
+                        text = "Location & Background",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    SettingToggleCard(
-                        icon = Icons.Filled.MyLocation,
-                        title = "Location Dot & Arrow Outline",
-                        subtitle = "Show the white outline around your GPS dot and direction arrow",
-                        checked = mapSettings.showLocationOutline,
-                        onCheckedChange = onToggleLocationOutline,
-                        shape = RoundedCornerShape(16.dp),
-                        switchTestTag = "location_outline_switch"
-                    )
+                    val showNotifHint = mapSettings.backgroundTrackingEnabled && !hasNotificationPermission
+                    val cardCount = if (showNotifHint) 3 else 2
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        SettingToggleCard(
+                            icon = Icons.Filled.MyLocation,
+                            title = "Location Dot & Arrow Outline",
+                            subtitle = "Show the white outline around your GPS dot and direction arrow",
+                            checked = mapSettings.showLocationOutline,
+                            onCheckedChange = onToggleLocationOutline,
+                            shape = groupedCardShape(0, cardCount),
+                            switchTestTag = "location_outline_switch"
+                        )
+                        SettingToggleCard(
+                            icon = Icons.Filled.Sensors,
+                            title = "Keep Running in Background",
+                            subtitle = if (isBackgroundServiceRunning) {
+                                "Active • GPS exploration, route recording & walking navigation run while minimized"
+                            } else {
+                                "Keep GPS exploration, fog unlocking, steps & route recording active when minimized"
+                            },
+                            checked = mapSettings.backgroundTrackingEnabled,
+                            onCheckedChange = onToggleBackgroundTracking,
+                            shape = groupedCardShape(1, cardCount),
+                            switchTestTag = "background_tracking_switch"
+                        )
+                        if (showNotifHint) {
+                            ExpressiveCard(shape = groupedCardShape(2, cardCount)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = ExpressiveTheme.colors.nestedElementSurface,
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Filled.NotificationsActive,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Background Status Notification",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Allow notifications so you can monitor and pause background tracking from the status bar",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    ExpressivePillButton(
+                                        text = "Allow",
+                                        onClick = onRequestNotificationPermission,
+                                        subtle = true,
+                                        modifier = Modifier.testTag("allow_notifications_button")
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
