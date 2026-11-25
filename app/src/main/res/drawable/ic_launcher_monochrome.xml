@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Monochrome winding trail paths (no translucent halos, pure alpha mask for Monet) -->
+    <path
+        android:pathData="M52,29 L52,33 C52,37 49,39 45,39 L40,39 C35,39 33,42 33,46 C33,50 36,52 40,52"
+        android:strokeColor="#000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="5.2" />
+    <path
+        android:pathData="M56,79 L56,75 C56,71 59,69 63,69 L68,69 C73,69 75,66 75,62 C75,58 72,56 68,56"
+        android:strokeColor="#000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="5.2" />
+
+    <!-- North blade filled solid for clear directional contrast under Monet tinting -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M57.18,50.82 L53.29,46.93 L72.03,35.97 L61.07,54.71 Z" />
+
+    <!-- South blade cleanly outlined -->
+    <path
+        android:pathData="M50.82,57.18 L46.93,53.29 L35.97,72.03 L54.71,61.07 Z"
+        android:strokeColor="#000000"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2.4" />
+
+    <!-- Center compass pivot -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,51.4 A2.6,2.6 0 1,0 54,56.6 A2.6,2.6 0 1,0 54,51.4 Z" />
+</vector>

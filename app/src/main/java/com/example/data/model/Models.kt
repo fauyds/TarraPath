@@ -422,6 +422,13 @@ sealed interface WalkTarget {
         override val targetLon: Double
     ) : WalkTarget
 
+    data class SavedTrackFinish(
+        val routeId: Long,
+        override val label: String,
+        override val targetLat: Double,
+        override val targetLon: Double
+    ) : WalkTarget
+
     data class SearchedPlace(
         val placeId: String,
         override val label: String,

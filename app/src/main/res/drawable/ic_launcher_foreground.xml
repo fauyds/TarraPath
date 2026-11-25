@@ -1,8 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/ic_terrapath_emblem"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Soft glow halo behind the winding exploration paths -->
+    <path
+        android:pathData="M52,29 L52,33 C52,37 49,39 45,39 L40,39 C35,39 33,42 33,46 C33,50 36,52 40,52"
+        android:strokeAlpha="0.28"
+        android:strokeColor="#34D399"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="8.5" />
+    <path
+        android:pathData="M56,79 L56,75 C56,71 59,69 63,69 L68,69 C73,69 75,66 75,62 C75,58 72,56 68,56"
+        android:strokeAlpha="0.28"
+        android:strokeColor="#34D399"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="8.5" />
+
+    <!-- Crisp winding trail paths -->
+    <path
+        android:pathData="M52,29 L52,33 C52,37 49,39 45,39 L40,39 C35,39 33,42 33,46 C33,50 36,52 40,52"
+        android:strokeColor="#ECFFF7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="5.0" />
+    <path
+        android:pathData="M56,79 L56,75 C56,71 59,69 63,69 L68,69 C73,69 75,66 75,62 C75,58 72,56 68,56"
+        android:strokeColor="#ECFFF7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="5.0" />
+
+    <!-- Diagonal Compass Needle: North blade (warm orange faceted) -->
+    <path
+        android:fillColor="#FF8A3D"
+        android:pathData="M57.18,50.82 L53.29,46.93 L72.03,35.97 Z" />
+    <path
+        android:fillColor="#EA580C"
+        android:pathData="M57.18,50.82 L72.03,35.97 L61.07,54.71 Z" />
+
+    <!-- Diagonal Compass Needle: South blade (ivory faceted) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50.82,57.18 L46.93,53.29 L35.97,72.03 Z" />
+    <path
+        android:fillColor="#CBD5E1"
+        android:pathData="M50.82,57.18 L35.97,72.03 L54.71,61.07 Z" />
+
+    <!-- Center compass pivot -->
+    <path
+        android:fillColor="#ECFFF7"
+        android:pathData="M54,51.4 A2.6,2.6 0 1,0 54,56.6 A2.6,2.6 0 1,0 54,51.4 Z" />
+</vector>

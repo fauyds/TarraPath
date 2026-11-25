@@ -19,7 +19,26 @@ data class ExploredChunkEntity(
     val unlockedAt: Long
 )
 
-@Entity(tableName = "routes")
+@Entity(tableName = "route_folders")
+data class RouteFolderEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val name: String,
+    val colorArgb: Long,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "routes",
+    foreignKeys = [
+        ForeignKey(
+            entity = RouteFolderEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["folderId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index(value = ["folderId"])]
+)
 data class RouteEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,
     val name: String,
@@ -30,7 +49,8 @@ data class RouteEntity(
     val maxSpeedKmh: Float,
     val chunksUnlocked: Int,
     val startedAt: Long,
-    val endedAt: Long
+    val endedAt: Long,
+    val folderId: Long? = null
 )
 
 @Entity(

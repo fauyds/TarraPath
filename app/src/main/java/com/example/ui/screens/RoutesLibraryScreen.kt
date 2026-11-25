@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -20,7 +23,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,9 +32,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CompareArrows
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Directions
+import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Schedule
@@ -42,6 +52,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,20 +68,26 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.RouteEntity
+import com.example.data.local.RouteFolderEntity
 import com.example.data.local.RoutePointEntity
 import com.example.data.model.LatLonPoint
 import com.example.data.model.MapPalette
 import com.example.domain.GeoGrid
+import com.example.ui.components.DeleteFolderConfirmDialog
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressiveHorizontalSegmentedSelector
 import com.example.ui.components.ExpressivePillButton
-import com.example.ui.components.LocalBackdropHazeState
+import com.example.ui.components.FolderBadgeChip
+import com.example.ui.components.FolderEditorDialog
+import com.example.ui.components.FrostedMenuContainer
 import com.example.ui.components.LocalBottomOverlayPadding
+import com.example.ui.components.MoveRouteToFolderDialog
+import com.example.ui.components.applyBackdropBlur
 import com.example.ui.components.groupedCardShape
+import com.example.ui.components.isBackdropBlurActive
 import com.example.ui.map.MiniMapPalettePreview
 import com.example.ui.theme.ExpressiveTheme
 import com.example.ui.theme.TelemetryTextStyle
-import dev.chrisbanes.haze.hazeSource
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -82,24 +99,62 @@ enum class RouteSortOrder(val label: String) {
     SHORTEST("Shortest")
 }
 
+private sealed interface FolderFilter {
+    data object All : FolderFilter
+    data class Specific(val folderId: Long) : FolderFilter
+}
+
 @Composable
 fun RoutesLibraryScreen(
     routes: List<RouteEntity>,
+    folders: List<RouteFolderEntity> = emptyList(),
     onRouteClick: (Long) -> Unit,
     onHighlightOnMap: (Long) -> Unit,
     onWalkToRouteStart: (Long) -> Unit = {},
     onDeleteRoute: (Long) -> Unit,
+    onCreateFolder: (name: String, colorArgb: Long, onCreated: (Long) -> Unit) -> Unit = { _, _, _ -> },
+    onUpdateFolder: (folder: RouteFolderEntity, newName: String, newColorArgb: Long) -> Unit = { _, _, _ -> },
+    onDeleteFolder: (folderId: Long) -> Unit = {},
+    onMoveRouteToFolder: (routeId: Long, folderId: Long?) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var sortOrder by remember { mutableStateOf(RouteSortOrder.RECENT) }
     var compareMode by remember { mutableStateOf(false) }
     var selectedCompareIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var selectedFilter by remember { mutableStateOf<FolderFilter>(FolderFilter.All) }
 
-    val sortedRoutes = remember(routes, sortOrder) {
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var editingFolder by remember { mutableStateOf<RouteFolderEntity?>(null) }
+    var deletingFolder by remember { mutableStateOf<RouteFolderEntity?>(null) }
+    var movingRoute by remember { mutableStateOf<RouteEntity?>(null) }
+
+    LaunchedEffect(folders, selectedFilter) {
+        val specific = selectedFilter as? FolderFilter.Specific
+        if (specific != null && folders.none { it.id == specific.folderId }) {
+            selectedFilter = FolderFilter.All
+        }
+    }
+
+    val folderMap = remember(folders) { folders.associateBy { it.id } }
+    val folderCounts = remember(routes) {
+        routes.mapNotNull { it.folderId }.groupingBy { it }.eachCount()
+    }
+    val activeFolder = remember(selectedFilter, folderMap) {
+        (selectedFilter as? FolderFilter.Specific)?.let { folderMap[it.folderId] }
+    }
+
+    val filteredRoutes = remember(routes, selectedFilter) {
+        when (val f = selectedFilter) {
+            FolderFilter.All -> routes
+            is FolderFilter.Specific -> routes.filter { it.folderId == f.folderId }
+        }
+    }
+
+    val sortedRoutes = remember(filteredRoutes, sortOrder) {
         when (sortOrder) {
-            RouteSortOrder.RECENT -> routes.sortedByDescending { it.endedAt }
-            RouteSortOrder.FASTEST -> routes.sortedBy { it.durationMillis }
-            RouteSortOrder.SHORTEST -> routes.sortedBy { it.distanceMeters }
+            RouteSortOrder.RECENT -> filteredRoutes.sortedByDescending { it.endedAt }
+            RouteSortOrder.FASTEST -> filteredRoutes.sortedBy { it.durationMillis }
+            RouteSortOrder.SHORTEST -> filteredRoutes.sortedBy { it.distanceMeters }
         }
     }
 
@@ -107,26 +162,20 @@ fun RoutesLibraryScreen(
     val totalDuration = remember(routes) { routes.sumOf { it.durationMillis } }
     val fastestAvgSpeed = remember(routes) { routes.maxOfOrNull { it.avgSpeedKmh } ?: 0f }
 
-    val hazeState = LocalBackdropHazeState.current
+    val anyDialogOpen = showCreateFolderDialog ||
+        editingFolder != null ||
+        deletingFolder != null ||
+        movingRoute != null
     val bottomOverlayPadding = LocalBottomOverlayPadding.current
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(ExpressiveTheme.colors.appBackground),
-        contentAlignment = Alignment.TopCenter
+    FrostedMenuContainer(
+        modifier = modifier,
+        blurBehindDialog = anyDialogOpen
     ) {
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxSize()
-                .then(
-                    if (ExpressiveTheme.colors.uiBlurEnabled && hazeState != null) {
-                        Modifier.hazeSource(state = hazeState)
-                    } else {
-                        Modifier
-                    }
-                )
                 .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(
                 start = 16.dp,
@@ -142,19 +191,20 @@ fun RoutesLibraryScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Route Library",
                             style = MaterialTheme.typography.headlineLarge,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            text = "Compare completion times across saved paths",
+                            text = "Organize walks in folders and compare paths",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     if (routes.size >= 2) {
+                        Spacer(modifier = Modifier.width(8.dp))
                         ExpressivePillButton(
                             text = if (compareMode) "Done" else "Compare",
                             icon = Icons.Filled.CompareArrows,
@@ -225,6 +275,125 @@ fun RoutesLibraryScreen(
                 }
             }
 
+            // Route Folders Shelf & Filter
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Folders",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        ExpressivePillButton(
+                            text = "New Folder",
+                            icon = Icons.Filled.CreateNewFolder,
+                            subtle = true,
+                            onClick = { showCreateFolderDialog = true },
+                            modifier = Modifier.testTag("new_folder_button")
+                        )
+                    }
+
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        item(key = "filter_all") {
+                            FolderFilterPill(
+                                label = "All",
+                                count = routes.size,
+                                icon = Icons.Filled.Route,
+                                accentColor = null,
+                                selected = selectedFilter == FolderFilter.All,
+                                onClick = { selectedFilter = FolderFilter.All },
+                                modifier = Modifier.testTag("folder_filter_all")
+                            )
+                        }
+                        items(folders, key = { it.id }) { folder ->
+                            FolderFilterPill(
+                                label = folder.name,
+                                count = folderCounts[folder.id] ?: 0,
+                                icon = Icons.Filled.Folder,
+                                accentColor = Color(folder.colorArgb),
+                                selected = (selectedFilter as? FolderFilter.Specific)?.folderId == folder.id,
+                                onClick = { selectedFilter = FolderFilter.Specific(folder.id) },
+                                modifier = Modifier.testTag("folder_filter_${folder.id}")
+                            )
+                        }
+                    }
+
+                    if (activeFolder != null) {
+                        val folderRoutesCount = folderCounts[activeFolder.id] ?: 0
+                        val folderDistance = filteredRoutes.sumOf { it.distanceMeters }
+                        ExpressiveCard {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(activeFolder.colorArgb).copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Folder,
+                                        contentDescription = null,
+                                        tint = Color(activeFolder.colorArgb),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = activeFolder.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "$folderRoutesCount route${if (folderRoutesCount == 1) "" else "s"} • ${GeoGrid.formatDistance(folderDistance)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { editingFolder = activeFolder },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("edit_folder_${activeFolder.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = "Edit folder",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { deletingFolder = activeFolder },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("delete_folder_${activeFolder.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = "Delete folder",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Route Comparison Bento Card
             if (compareMode) {
                 item {
@@ -270,7 +439,7 @@ fun RoutesLibraryScreen(
                 }
             }
 
-            if (routes.isNotEmpty()) {
+            if (sortedRoutes.isNotEmpty()) {
                 item {
                     ExpressiveHorizontalSegmentedSelector(
                         options = RouteSortOrder.entries,
@@ -293,17 +462,25 @@ fun RoutesLibraryScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.Explore,
+                                imageVector = if (routes.isEmpty()) Icons.Filled.Explore else Icons.Filled.FolderOpen,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(44.dp)
                             )
                             Text(
-                                text = "No Recorded Routes Yet",
+                                text = if (activeFolder != null) {
+                                    "No Routes in \"${activeFolder.name}\""
+                                } else {
+                                    "No Recorded Routes Yet"
+                                },
                                 style = MaterialTheme.typography.titleLarge
                             )
                             Text(
-                                text = "Tap Start Route on the Explore map to time a walk, reveal fog-of-war sectors, and compare your fastest paths.",
+                                text = if (activeFolder != null) {
+                                    "Use the folder move button on any saved route or choose this folder when saving a new walk."
+                                } else {
+                                    "Tap Start Route on the Explore map to time a walk, reveal fog-of-war sectors, and compare your fastest paths."
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -316,8 +493,11 @@ fun RoutesLibraryScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         sortedRoutes.forEachIndexed { index, route ->
                             val isSelected = route.id in selectedCompareIds
+                            val routeFolder = route.folderId?.let { folderMap[it] }
                             RouteListRow(
                                 route = route,
+                                folder = routeFolder,
+                                showFolderBadge = selectedFilter == FolderFilter.All && routeFolder != null,
                                 shape = groupedCardShape(index, sortedRoutes.size),
                                 compareMode = compareMode,
                                 isSelectedForCompare = isSelected,
@@ -332,12 +512,159 @@ fun RoutesLibraryScreen(
                                         onRouteClick(route.id)
                                     }
                                 },
+                                onMoveToFolder = { movingRoute = route },
                                 onHighlightOnMap = { onHighlightOnMap(route.id) },
                                 onWalkToStart = { onWalkToRouteStart(route.id) }
                             )
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if (showCreateFolderDialog) {
+        FolderEditorDialog(
+            onConfirm = { name, colorArgb ->
+                showCreateFolderDialog = false
+                onCreateFolder(name, colorArgb) { createdId ->
+                    selectedFilter = FolderFilter.Specific(createdId)
+                }
+            },
+            onDismiss = { showCreateFolderDialog = false }
+        )
+    }
+
+    val folderToEdit = editingFolder
+    if (folderToEdit != null) {
+        FolderEditorDialog(
+            initialFolder = folderToEdit,
+            onConfirm = { newName, newColor ->
+                onUpdateFolder(folderToEdit, newName, newColor)
+                editingFolder = null
+            },
+            onDismiss = { editingFolder = null }
+        )
+    }
+
+    val folderToDelete = deletingFolder
+    if (folderToDelete != null) {
+        DeleteFolderConfirmDialog(
+            folder = folderToDelete,
+            routeCount = folderCounts[folderToDelete.id] ?: 0,
+            onConfirmDelete = {
+                onDeleteFolder(folderToDelete.id)
+                if ((selectedFilter as? FolderFilter.Specific)?.folderId == folderToDelete.id) {
+                    selectedFilter = FolderFilter.All
+                }
+                deletingFolder = null
+            },
+            onDismiss = { deletingFolder = null }
+        )
+    }
+
+    val routeToMove = movingRoute
+    if (routeToMove != null) {
+        MoveRouteToFolderDialog(
+            route = routeToMove,
+            folders = folders,
+            onSelectFolder = { targetFolderId ->
+                onMoveRouteToFolder(routeToMove.id, targetFolderId)
+                movingRoute = null
+            },
+            onCreateAndSelectFolder = { name, colorArgb ->
+                onCreateFolder(name, colorArgb) { newFolderId ->
+                    onMoveRouteToFolder(routeToMove.id, newFolderId)
+                }
+                movingRoute = null
+            },
+            onDismiss = { movingRoute = null }
+        )
+    }
+}
+
+@Composable
+private fun FolderFilterPill(
+    label: String,
+    count: Int,
+    icon: ImageVector,
+    accentColor: Color?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+    val backdropActive = isBackdropBlurActive()
+    val pillShape = RoundedCornerShape(percent = 50)
+    val bgColor = when {
+        selected -> ExpressiveTheme.colors.selectorSelected
+        backdropActive -> Color.Transparent
+        else -> ExpressiveTheme.colors.selectorUnselected
+    }
+    val contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val iconTint = when {
+        selected -> MaterialTheme.colorScheme.onPrimary
+        accentColor != null -> accentColor
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    Surface(
+        modifier = modifier
+            .defaultMinSize(minHeight = 48.dp)
+            .then(
+                if (!selected) {
+                    Modifier.applyBackdropBlur(
+                        shape = pillShape,
+                        tintColor = ExpressiveTheme.colors.selectorUnselected
+                    )
+                } else {
+                    Modifier.clip(pillShape)
+                }
+            )
+            .clip(pillShape)
+            .clickable(onClick = onClick),
+        shape = pillShape,
+        color = bgColor,
+        shadowElevation = if (blurOn) 0.dp else if (selected) 2.dp else 1.dp,
+        border = if (blurOn && !selected) {
+            BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+        } else {
+            null
+        }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Surface(
+                shape = CircleShape,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                } else {
+                    ExpressiveTheme.colors.nestedElementSurface
+                }
+            ) {
+                Text(
+                    text = "$count",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentColor,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
             }
         }
     }
@@ -423,10 +750,13 @@ private fun CompareRouteMiniColumn(
 @Composable
 private fun RouteListRow(
     route: RouteEntity,
+    folder: RouteFolderEntity?,
+    showFolderBadge: Boolean,
     shape: RoundedCornerShape,
     compareMode: Boolean,
     isSelectedForCompare: Boolean,
     onClick: () -> Unit,
+    onMoveToFolder: () -> Unit,
     onHighlightOnMap: () -> Unit,
     onWalkToStart: () -> Unit = {}
 ) {
@@ -440,7 +770,7 @@ private fun RouteListRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (compareMode) {
@@ -476,9 +806,25 @@ private fun RouteListRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (showFolderBadge && folder != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FolderBadgeChip(folder = folder)
+                }
             }
 
             if (!compareMode) {
+                IconButton(
+                    onClick = onMoveToFolder,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("move_route_folder_${route.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.DriveFileMove,
+                        contentDescription = "Move route to folder",
+                        tint = folder?.let { Color(it.colorArgb) } ?: MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 IconButton(
                     onClick = onWalkToStart,
                     modifier = Modifier
@@ -510,32 +856,45 @@ private fun RouteListRow(
 fun RouteDetailScreen(
     route: RouteEntity?,
     points: List<RoutePointEntity>,
+    folders: List<RouteFolderEntity> = emptyList(),
     palette: MapPalette,
     showGridLines: Boolean,
     onBack: () -> Unit,
     onShowOnExploreMap: (Long) -> Unit,
     onWalkToStart: (Long) -> Unit = {},
+    onWalkToFinish: (Long) -> Unit = {},
     isSnappingToRoads: Boolean = false,
     onSnapToRoads: (Long) -> Unit = {},
+    onMoveRouteToFolder: (routeId: Long, folderId: Long?) -> Unit = { _, _ -> },
+    onCreateFolder: (name: String, colorArgb: Long, onCreated: (Long) -> Unit) -> Unit = { _, _, _ -> },
     onDeleteRoute: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val latLonPoints = remember(points) {
         points.map { LatLonPoint(it.latitude, it.longitude, it.speedKmh, it.timestamp) }
     }
+    var showMoveFolderDialog by remember { mutableStateOf(false) }
+    val currentFolder = remember(route?.folderId, folders) {
+        route?.folderId?.let { fid -> folders.firstOrNull { it.id == fid } }
+    }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(ExpressiveTheme.colors.appBackground),
-        contentAlignment = Alignment.TopCenter
+    val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    FrostedMenuContainer(
+        modifier = modifier,
+        blurBehindDialog = showMoveFolderDialog
     ) {
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp + navBarBottom
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
@@ -543,14 +902,25 @@ fun RouteDetailScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+                    val backdropActive = isBackdropBlurActive()
                     Surface(
                         modifier = Modifier
                             .size(48.dp)
+                            .applyBackdropBlur(
+                                shape = CircleShape,
+                                tintColor = ExpressiveTheme.colors.cardSurface
+                            )
                             .clip(CircleShape)
                             .clickable(onClick = onBack),
                         shape = CircleShape,
-                        color = ExpressiveTheme.colors.cardSurface,
-                        shadowElevation = 2.dp
+                        color = if (backdropActive) Color.Transparent else ExpressiveTheme.colors.cardSurface,
+                        shadowElevation = if (blurOn) 0.dp else 2.dp,
+                        border = if (blurOn) {
+                            BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+                        } else {
+                            null
+                        }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -581,6 +951,66 @@ fun RouteDetailScreen(
                                 .fillMaxWidth()
                                 .height(220.dp)
                         )
+                    }
+                }
+
+                // Folder assignment card
+                item {
+                    ExpressiveCard(
+                        onClick = { showMoveFolderDialog = true },
+                        modifier = Modifier.testTag("detail_folder_card")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 48.dp)
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (currentFolder != null) Icons.Filled.Folder else Icons.Filled.FolderOpen,
+                                contentDescription = null,
+                                tint = currentFolder?.let { Color(it.colorArgb) } ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Folder",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = currentFolder?.name ?: "None (All only)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(percent = 50),
+                                color = ExpressiveTheme.colors.nestedElementSurface
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.DriveFileMove,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Move",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -669,6 +1099,14 @@ fun RouteDetailScreen(
                                 .fillMaxWidth()
                                 .testTag("detail_walk_to_start_button")
                         )
+                        ExpressivePillButton(
+                            text = "Walk to Finish",
+                            icon = Icons.Filled.Flag,
+                            onClick = { onWalkToFinish(route.id) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("detail_walk_to_finish_button")
+                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -706,5 +1144,23 @@ fun RouteDetailScreen(
                 }
             }
         }
+    }
+
+    if (showMoveFolderDialog && route != null) {
+        MoveRouteToFolderDialog(
+            route = route,
+            folders = folders,
+            onSelectFolder = { folderId ->
+                onMoveRouteToFolder(route.id, folderId)
+                showMoveFolderDialog = false
+            },
+            onCreateAndSelectFolder = { name, colorArgb ->
+                onCreateFolder(name, colorArgb) { newFolderId ->
+                    onMoveRouteToFolder(route.id, newFolderId)
+                }
+                showMoveFolderDialog = false
+            },
+            onDismiss = { showMoveFolderDialog = false }
+        )
     }
 }

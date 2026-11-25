@@ -9,6 +9,7 @@ import com.example.data.local.ExplorerStatsEntity
 import com.example.data.local.MapMarkerEntity
 import com.example.data.local.OfflineRegionEntity
 import com.example.data.local.RouteEntity
+import com.example.data.local.RouteFolderEntity
 import com.example.data.local.RoutePointEntity
 import com.example.data.model.AchievementCatalog
 import com.example.data.model.AchievementDefinition
@@ -149,6 +150,7 @@ class TerraViewModel(
     )
 
     val allRoutes: StateFlow<List<RouteEntity>> = trackingCoordinator.allRoutes
+    val allRouteFolders: StateFlow<List<RouteFolderEntity>> = trackingCoordinator.allRouteFolders
 
     val allMarkers: StateFlow<List<MapMarkerEntity>> = repository.allMarkers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -201,8 +203,33 @@ class TerraViewModel(
         trackingCoordinator.stopRouteRecordingAndPrompt()
     }
 
-    fun confirmSaveRoute(name: String, colorArgb: Long) {
-        trackingCoordinator.confirmSaveRoute(name, colorArgb)
+    fun confirmSaveRoute(name: String, colorArgb: Long, folderId: Long? = null) {
+        trackingCoordinator.confirmSaveRoute(name, colorArgb, folderId)
+    }
+
+    fun createRouteFolder(name: String, colorArgb: Long, onCreated: (Long) -> Unit = {}) {
+        viewModelScope.launch {
+            val id = repository.createRouteFolder(name, colorArgb)
+            if (id > 0L) onCreated(id)
+        }
+    }
+
+    fun updateRouteFolder(folder: RouteFolderEntity, newName: String, newColorArgb: Long) {
+        viewModelScope.launch {
+            repository.updateRouteFolder(folder, newName, newColorArgb)
+        }
+    }
+
+    fun deleteRouteFolder(folderId: Long) {
+        viewModelScope.launch {
+            repository.deleteRouteFolder(folderId)
+        }
+    }
+
+    fun moveRouteToFolder(routeId: Long, folderId: Long?) {
+        viewModelScope.launch {
+            repository.moveRouteToFolder(routeId, folderId)
+        }
     }
 
     fun discardPendingRoute() {
@@ -223,6 +250,10 @@ class TerraViewModel(
 
     fun startWalkingToTrackStart(routeId: Long) {
         trackingCoordinator.startWalkingToTrackStart(routeId)
+    }
+
+    fun startWalkingToTrackFinish(routeId: Long) {
+        trackingCoordinator.startWalkingToTrackFinish(routeId)
     }
 
     fun startWalkingToSearchPlace(place: SearchPlaceResult) {

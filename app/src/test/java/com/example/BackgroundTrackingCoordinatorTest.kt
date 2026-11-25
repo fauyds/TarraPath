@@ -8,7 +8,9 @@ import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.repository.TerraRepository
 import com.example.data.sensors.LocationTracker
 import com.example.data.sensors.StepSensorTracker
+import com.example.data.model.LatLonPoint
 import com.example.data.model.LocationTelemetry
+import com.example.data.model.WalkTarget
 import com.example.domain.GeoGrid
 import com.example.service.BackgroundServiceController
 import com.example.service.TrackingCoordinator
@@ -28,6 +30,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -277,6 +280,60 @@ class BackgroundTrackingCoordinatorTest {
         )
         waitUntil { coordinator.totalChunkCount.value >= 4 }
         assertEquals(4, coordinator.totalChunkCount.value)
+
+        scope.cancel()
+    }
+
+    @Test
+    fun trackingCoordinator_startWalkingToTrackFinishTargetsLastPointAndStopsOnRouteDelete() = runBlocking {
+        val repo = TerraRepository(
+            chunkDao = db.chunkDao(),
+            routeDao = db.routeDao(),
+            markerDao = db.markerDao(),
+            paletteDao = db.paletteDao(),
+            achievementDao = db.achievementDao()
+        )
+        val prefs = UserPreferencesRepository(context)
+        val routeId = repo.saveRecordedRoute(
+            name = "River Trail",
+            colorArgb = 0xFF1B6B52L,
+            distanceMeters = 520.0,
+            durationMillis = 360_000L,
+            avgSpeedKmh = 5.2f,
+            maxSpeedKmh = 6.0f,
+            chunksUnlocked = 3,
+            startedAt = 1_000L,
+            endedAt = 361_000L,
+            points = listOf(
+                LatLonPoint(37.7740, -122.4200, 4.5f, 1_000L),
+                LatLonPoint(37.7755, -122.4185, 5.0f, 180_000L),
+                LatLonPoint(37.7780, -122.4150, 4.8f, 361_000L)
+            )
+        )
+
+        val scope = CoroutineScope(SupervisorJob() + testDispatcher)
+        val coordinator = TrackingCoordinator(
+            repository = repo,
+            preferences = prefs,
+            locationTracker = LocationTracker(context),
+            stepSensorTracker = StepSensorTracker(context),
+            scope = scope
+        )
+        waitUntil { coordinator.allRoutes.value.any { it.id == routeId } }
+
+        coordinator.startWalkingToTrackFinish(routeId)
+        waitUntil { coordinator.walkingRouteState.value.target is WalkTarget.SavedTrackFinish }
+
+        val target = coordinator.walkingRouteState.value.target as WalkTarget.SavedTrackFinish
+        assertEquals(routeId, target.routeId)
+        assertEquals("River Trail Finish", target.label)
+        assertEquals(37.7780, target.targetLat, 1e-6)
+        assertEquals(-122.4150, target.targetLon, 1e-6)
+        assertEquals(routeId, coordinator.highlightedRouteId.value)
+
+        coordinator.onRouteDeleted(routeId)
+        assertNull(coordinator.walkingRouteState.value.target)
+        assertNull(coordinator.highlightedRouteId.value)
 
         scope.cancel()
     }

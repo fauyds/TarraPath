@@ -56,12 +56,11 @@ import com.example.data.model.AchievementUiItem
 import com.example.domain.GeoGrid
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressiveHorizontalSegmentedSelector
-import com.example.ui.components.LocalBackdropHazeState
+import com.example.ui.components.FrostedMenuContainer
 import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.groupedCardShape
 import com.example.ui.theme.ExpressiveTheme
 import com.example.ui.theme.TelemetryTextStyle
-import dev.chrisbanes.haze.hazeSource
 import kotlin.math.roundToInt
 
 enum class AchievementFilter(val label: String) {
@@ -93,26 +92,13 @@ fun AchievementsScreen(
 
     val unlockedCount = remember(achievements) { achievements.count { it.isUnlocked } }
 
-    val hazeState = LocalBackdropHazeState.current
     val bottomOverlayPadding = LocalBottomOverlayPadding.current
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(ExpressiveTheme.colors.appBackground),
-        contentAlignment = Alignment.TopCenter
-    ) {
+    FrostedMenuContainer(modifier = modifier) {
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxSize()
-                .then(
-                    if (ExpressiveTheme.colors.uiBlurEnabled && hazeState != null) {
-                        Modifier.hazeSource(state = hazeState)
-                    } else {
-                        Modifier
-                    }
-                )
                 .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(
                 start = 16.dp,

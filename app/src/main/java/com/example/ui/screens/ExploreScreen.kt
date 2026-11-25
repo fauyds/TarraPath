@@ -39,9 +39,12 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.MyLocation
@@ -88,6 +91,7 @@ import com.example.data.local.ExplorerStatsEntity
 import com.example.data.local.MapMarkerEntity
 import com.example.data.local.OfflineRegionEntity
 import com.example.data.local.RouteEntity
+import com.example.data.local.RouteFolderEntity
 import com.example.data.local.RoutePointEntity
 import com.example.data.model.ActiveRecordingState
 import com.example.data.model.ApiProvider
@@ -110,6 +114,7 @@ import com.example.ui.components.ColorPickerMath
 import com.example.ui.components.CustomColorPickerDialog
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressivePillButton
+import com.example.ui.components.FolderEditorDialog
 import com.example.ui.components.GoogleIconLibraryDialog
 import com.example.ui.components.LocalBackdropHazeState
 import com.example.ui.components.LocalBottomOverlayPadding
@@ -164,8 +169,10 @@ fun ExploreScreen(
     onRequestPermissions: () -> Unit,
     onStartRoute: () -> Unit,
     onStopRoute: () -> Unit,
-    onConfirmSaveRoute: (name: String, colorArgb: Long) -> Unit,
+    onConfirmSaveRoute: (name: String, colorArgb: Long, folderId: Long?) -> Unit,
     onDiscardRoute: () -> Unit,
+    routeFolders: List<RouteFolderEntity> = emptyList(),
+    onCreateFolder: (name: String, colorArgb: Long, onCreated: (Long) -> Unit) -> Unit = { _, _, _ -> },
     onClearHighlightedRoute: () -> Unit,
     onAddMarker: (title: String, note: String, category: MarkerCategory, lat: Double, lon: Double, colorArgb: Long, iconName: String) -> Unit,
     onUpdateMarkerIcon: (MapMarkerEntity, String) -> Unit,
@@ -855,6 +862,8 @@ fun ExploreScreen(
         SaveRouteDialog(
             summary = pendingRouteSummary,
             defaultColorArgb = palette.routeColor,
+            folders = routeFolders,
+            onCreateFolder = onCreateFolder,
             onSave = onConfirmSaveRoute,
             onDiscard = onDiscardRoute
         )
@@ -1033,12 +1042,16 @@ private fun ActiveRecordingDock(
 private fun SaveRouteDialog(
     summary: PendingRouteSummary,
     defaultColorArgb: Long,
-    onSave: (name: String, colorArgb: Long) -> Unit,
+    folders: List<RouteFolderEntity>,
+    onCreateFolder: (name: String, colorArgb: Long, onCreated: (Long) -> Unit) -> Unit,
+    onSave: (name: String, colorArgb: Long, folderId: Long?) -> Unit,
     onDiscard: () -> Unit
 ) {
     var routeName by remember { mutableStateOf("Explorer Path") }
     var selectedColor by remember { mutableLongStateOf(defaultColorArgb) }
+    var selectedFolderId by remember { mutableStateOf<Long?>(null) }
     var showColorPicker by remember { mutableStateOf(false) }
+    var showCreateFolder by remember { mutableStateOf(false) }
 
     val colorChoices = remember(defaultColorArgb, selectedColor) {
         (listOf(
@@ -1146,12 +1159,69 @@ private fun SaveRouteDialog(
                         }
                     }
                 }
+
+                Text(
+                    text = "Folder",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SaveDialogFolderChip(
+                        label = "No Folder",
+                        icon = Icons.Filled.FolderOpen,
+                        accentColor = null,
+                        selected = selectedFolderId == null,
+                        onClick = { selectedFolderId = null },
+                        modifier = Modifier.testTag("save_route_folder_none")
+                    )
+                    folders.forEach { folder ->
+                        SaveDialogFolderChip(
+                            label = folder.name,
+                            icon = Icons.Filled.Folder,
+                            accentColor = Color(folder.colorArgb),
+                            selected = selectedFolderId == folder.id,
+                            onClick = { selectedFolderId = folder.id },
+                            modifier = Modifier.testTag("save_route_folder_${folder.id}")
+                        )
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 40.dp)
+                            .clip(RoundedCornerShape(percent = 50))
+                            .clickable { showCreateFolder = true }
+                            .testTag("save_route_new_folder_button"),
+                        shape = RoundedCornerShape(percent = 50),
+                        color = ExpressiveTheme.colors.nestedElementSurface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.CreateNewFolder,
+                                contentDescription = "Create new folder",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "New",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             ExpressivePillButton(
                 text = "Save Route",
-                onClick = { onSave(routeName, selectedColor) },
+                onClick = { onSave(routeName, selectedColor, selectedFolderId) },
                 modifier = Modifier.testTag("confirm_save_route")
             )
         },
@@ -1173,6 +1243,61 @@ private fun SaveRouteDialog(
             },
             onDismiss = { showColorPicker = false }
         )
+    }
+
+    if (showCreateFolder) {
+        FolderEditorDialog(
+            onConfirm = { name, colorArgb ->
+                showCreateFolder = false
+                onCreateFolder(name, colorArgb) { createdId ->
+                    selectedFolderId = createdId
+                }
+            },
+            onDismiss = { showCreateFolder = false }
+        )
+    }
+}
+
+@Composable
+private fun SaveDialogFolderChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accentColor: Color?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .defaultMinSize(minHeight = 40.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(percent = 50),
+        color = if (selected) ExpressiveTheme.colors.buttonPrimary else ExpressiveTheme.colors.nestedElementSurface
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = when {
+                    selected -> MaterialTheme.colorScheme.onPrimary
+                    accentColor != null -> accentColor
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 

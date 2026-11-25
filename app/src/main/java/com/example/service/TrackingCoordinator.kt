@@ -3,6 +3,7 @@ package com.example.service
 import com.example.data.local.ExploredChunkEntity
 import com.example.data.local.MapMarkerEntity
 import com.example.data.local.RouteEntity
+import com.example.data.local.RouteFolderEntity
 import com.example.data.model.AchievementDefinition
 import com.example.data.model.ActiveRecordingState
 import com.example.data.model.ApiProvider
@@ -111,6 +112,9 @@ class TrackingCoordinator(
         .stateIn(scope, SharingStarted.Eagerly, ApiProvider.CUSTOM_GENERAL)
 
     val allRoutes: StateFlow<List<RouteEntity>> = repository.allRoutes
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    val allRouteFolders: StateFlow<List<RouteFolderEntity>> = repository.allRouteFolders
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     val exploredChunks: StateFlow<List<ExploredChunkEntity>> = repository.exploredChunks
@@ -520,7 +524,7 @@ class TrackingCoordinator(
         syncTrackingAndServiceState()
     }
 
-    fun confirmSaveRoute(name: String, colorArgb: Long) {
+    fun confirmSaveRoute(name: String, colorArgb: Long, folderId: Long? = null) {
         val summary = _pendingRouteSummary.value ?: return
         _pendingRouteSummary.value = null
         scope.launch {
@@ -534,7 +538,8 @@ class TrackingCoordinator(
                 chunksUnlocked = summary.chunksUnlocked,
                 startedAt = summary.startedAt,
                 endedAt = summary.endedAt,
-                points = summary.points
+                points = summary.points,
+                folderId = folderId
             )
             _highlightedRouteId.value = savedId
         }
@@ -547,7 +552,8 @@ class TrackingCoordinator(
     fun highlightRouteOnMap(routeId: Long?) {
         _highlightedRouteId.value = routeId
         if (routeId == null) {
-            if (_walkingRouteState.value.target is WalkTarget.SavedTrackStart) {
+            val activeTarget = _walkingRouteState.value.target
+            if (activeTarget is WalkTarget.SavedTrackStart || activeTarget is WalkTarget.SavedTrackFinish) {
                 stopWalkingNavigation()
             }
         } else {
@@ -599,6 +605,23 @@ class TrackingCoordinator(
                     label = "$routeName Start",
                     targetLat = firstPt.latitude,
                     targetLon = firstPt.longitude
+                )
+            )
+        }
+    }
+
+    fun startWalkingToTrackFinish(routeId: Long) {
+        _highlightedRouteId.value = routeId
+        scope.launch {
+            val points = repository.getRoutePointsOnce(routeId)
+            val lastPt = points.lastOrNull() ?: return@launch
+            val routeName = allRoutes.value.firstOrNull { it.id == routeId }?.name ?: "Saved Track"
+            activateWalkTarget(
+                WalkTarget.SavedTrackFinish(
+                    routeId = routeId,
+                    label = "$routeName Finish",
+                    targetLat = lastPt.latitude,
+                    targetLon = lastPt.longitude
                 )
             )
         }
@@ -847,7 +870,9 @@ class TrackingCoordinator(
             _highlightedRouteId.value = null
         }
         val activeTarget = _walkingRouteState.value.target
-        if (activeTarget is WalkTarget.SavedTrackStart && activeTarget.routeId == routeId) {
+        if ((activeTarget is WalkTarget.SavedTrackStart && activeTarget.routeId == routeId) ||
+            (activeTarget is WalkTarget.SavedTrackFinish && activeTarget.routeId == routeId)
+        ) {
             stopWalkingNavigation()
         }
     }

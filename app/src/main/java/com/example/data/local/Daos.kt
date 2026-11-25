@@ -60,8 +60,32 @@ interface RouteDao {
     @Query("DELETE FROM route_points WHERE routeId = :routeId")
     suspend fun deletePointsForRoute(routeId: Long)
 
+    @Query("UPDATE routes SET folderId = :folderId WHERE id = :routeId")
+    suspend fun updateRouteFolder(routeId: Long, folderId: Long?)
+
+    @Query("UPDATE routes SET folderId = NULL WHERE folderId = :folderId")
+    suspend fun clearFolderFromRoutes(folderId: Long)
+
     @Query("DELETE FROM routes WHERE id = :routeId")
     suspend fun deleteRouteById(routeId: Long)
+}
+
+@Dao
+interface RouteFolderDao {
+    @Query("SELECT * FROM route_folders ORDER BY createdAt ASC")
+    fun observeAllFolders(): Flow<List<RouteFolderEntity>>
+
+    @Query("SELECT * FROM route_folders ORDER BY createdAt ASC")
+    suspend fun getAllFoldersOnce(): List<RouteFolderEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFolder(folder: RouteFolderEntity): Long
+
+    @Update
+    suspend fun updateFolder(folder: RouteFolderEntity)
+
+    @Query("DELETE FROM route_folders WHERE id = :folderId")
+    suspend fun deleteFolderById(folderId: Long)
 }
 
 @Dao

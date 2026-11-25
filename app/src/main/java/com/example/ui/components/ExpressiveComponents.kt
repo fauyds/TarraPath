@@ -55,14 +55,22 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import android.os.Build
 import android.view.WindowManager
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -75,6 +83,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -136,6 +145,140 @@ fun Modifier.applyBackdropBlur(
             )
     } else {
         this
+    }
+}
+
+/**
+ * Ambient atmospheric backdrop for non-map menus (`Routes`, `RouteDetail`, `Achievements`, `Settings`).
+ * Draws the standard expressive background plus subtle Monet color glows & cartographic contour
+ * arcs when UI Blur is enabled so frosted glass cards have real depth and gradients to blur.
+ */
+@Composable
+fun FrostedMenuBackdrop(
+    modifier: Modifier = Modifier
+) {
+    val baseColor = ExpressiveTheme.colors.appBackground
+    val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+    val primary = MaterialTheme.colorScheme.primary
+    val tertiary = MaterialTheme.colorScheme.tertiary
+    val secondary = MaterialTheme.colorScheme.secondary
+    val isDark = baseColor.luminance() < 0.4f
+
+    Canvas(
+        modifier = modifier
+            .fillMaxSize()
+            .background(baseColor)
+    ) {
+        if (!blurOn) return@Canvas
+
+        val w = size.width
+        val h = size.height
+        val glowAlpha1 = if (isDark) 0.24f else 0.18f
+        val glowAlpha2 = if (isDark) 0.20f else 0.16f
+        val glowAlpha3 = if (isDark) 0.16f else 0.13f
+
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(primary.copy(alpha = glowAlpha1), Color.Transparent),
+                center = Offset(w * 0.85f, h * 0.12f),
+                radius = w * 0.85f
+            ),
+            radius = w * 0.85f,
+            center = Offset(w * 0.85f, h * 0.12f)
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(tertiary.copy(alpha = glowAlpha2), Color.Transparent),
+                center = Offset(w * 0.12f, h * 0.48f),
+                radius = w * 0.80f
+            ),
+            radius = w * 0.80f,
+            center = Offset(w * 0.12f, h * 0.48f)
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(secondary.copy(alpha = glowAlpha3), Color.Transparent),
+                center = Offset(w * 0.78f, h * 0.86f),
+                radius = w * 0.75f
+            ),
+            radius = w * 0.75f,
+            center = Offset(w * 0.78f, h * 0.86f)
+        )
+
+        // Subtle cartographic contour rings so frosted glass blur radius changes are visibly crisp
+        val ringAlpha = if (isDark) 0.11f else 0.10f
+        val strokeWidth = 1.5.dp.toPx()
+        drawCircle(
+            color = primary.copy(alpha = ringAlpha),
+            radius = w * 0.44f,
+            center = Offset(w * 0.84f, h * 0.15f),
+            style = Stroke(width = strokeWidth)
+        )
+        drawCircle(
+            color = tertiary.copy(alpha = ringAlpha * 0.9f),
+            radius = w * 0.62f,
+            center = Offset(w * 0.84f, h * 0.15f),
+            style = Stroke(width = strokeWidth)
+        )
+        drawCircle(
+            color = secondary.copy(alpha = ringAlpha * 0.85f),
+            radius = w * 0.48f,
+            center = Offset(w * 0.14f, h * 0.60f),
+            style = Stroke(width = strokeWidth)
+        )
+    }
+}
+
+/**
+ * Container for scrollable menu screens that isolates the screen-local card backdrop HazeState
+ * (whose source is the sibling [FrostedMenuBackdrop]) from the outer navigation HazeState (whose
+ * source is this container box, allowing the bottom navigation bar and toast banners to blur the
+ * scrolling menu content).
+ */
+@Composable
+fun FrostedMenuContainer(
+    modifier: Modifier = Modifier,
+    blurBehindDialog: Boolean = false,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val navHazeState = LocalBackdropHazeState.current
+    val uiBlurEnabled = ExpressiveTheme.colors.uiBlurEnabled
+    val uiBlurRadiusDp = ExpressiveTheme.colors.uiBlurRadiusDp
+    val cardHazeState = remember(uiBlurEnabled) {
+        if (uiBlurEnabled) HazeState() else null
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(ExpressiveTheme.colors.appBackground)
+            .then(
+                if (uiBlurEnabled && navHazeState != null) {
+                    Modifier.hazeSource(state = navHazeState)
+                } else {
+                    Modifier
+                }
+            )
+            .conditionalBlur(
+                enabled = uiBlurEnabled && blurBehindDialog,
+                radius = (uiBlurRadiusDp * 0.5f).coerceIn(2f, 20f).dp
+            ),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        FrostedMenuBackdrop(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (uiBlurEnabled && cardHazeState != null) {
+                        Modifier.hazeSource(state = cardHazeState)
+                    } else {
+                        Modifier
+                    }
+                )
+        )
+        CompositionLocalProvider(LocalBackdropHazeState provides cardHazeState) {
+            content()
+        }
     }
 }
 
@@ -287,11 +430,13 @@ fun <T> ExpressiveHorizontalSegmentedSelector(
                 else -> RoundedCornerShape(4.dp)
             }
 
+            val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+            val backdropActive = isBackdropBlurActive()
             val bgColor by animateColorAsState(
-                targetValue = if (isSelected) {
-                    ExpressiveTheme.colors.selectorSelected
-                } else {
-                    ExpressiveTheme.colors.selectorUnselected
+                targetValue = when {
+                    isSelected -> ExpressiveTheme.colors.selectorSelected
+                    backdropActive -> Color.Transparent
+                    else -> ExpressiveTheme.colors.selectorUnselected
                 },
                 label = "segment_bg"
             )
@@ -308,12 +453,27 @@ fun <T> ExpressiveHorizontalSegmentedSelector(
                 modifier = Modifier
                     .weight(1f)
                     .defaultMinSize(minHeight = 48.dp)
+                    .then(
+                        if (!isSelected) {
+                            Modifier.applyBackdropBlur(
+                                shape = exactShape,
+                                tintColor = ExpressiveTheme.colors.selectorUnselected
+                            )
+                        } else {
+                            Modifier.clip(exactShape)
+                        }
+                    )
                     .clip(exactShape)
                     .clickable(role = Role.RadioButton) { onOptionSelected(option) }
                     .testTag("${testTagPrefix}_${index}"),
                 shape = exactShape,
                 color = bgColor,
-                shadowElevation = if (isSelected) 2.dp else 1.dp
+                shadowElevation = if (blurOn) 0.dp else if (isSelected) 2.dp else 1.dp,
+                border = if (blurOn && !isSelected) {
+                    BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+                } else {
+                    null
+                }
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
@@ -379,11 +539,13 @@ fun <T> ExpressiveVerticalSegmentedSelector(
                 )
                 else -> RoundedCornerShape(4.dp)
             }
+            val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+            val backdropActive = isBackdropBlurActive()
             val bgColor by animateColorAsState(
-                targetValue = if (isSelected) {
-                    ExpressiveTheme.colors.selectorSelected
-                } else {
-                    ExpressiveTheme.colors.selectorUnselected
+                targetValue = when {
+                    isSelected -> ExpressiveTheme.colors.selectorSelected
+                    backdropActive -> Color.Transparent
+                    else -> ExpressiveTheme.colors.selectorUnselected
                 },
                 label = "vsegment_bg"
             )
@@ -400,11 +562,26 @@ fun <T> ExpressiveVerticalSegmentedSelector(
                 modifier = Modifier
                     .fillMaxWidth()
                     .defaultMinSize(minHeight = 48.dp)
+                    .then(
+                        if (!isSelected) {
+                            Modifier.applyBackdropBlur(
+                                shape = shape,
+                                tintColor = ExpressiveTheme.colors.selectorUnselected
+                            )
+                        } else {
+                            Modifier.clip(shape)
+                        }
+                    )
                     .clip(shape)
                     .clickable(role = Role.RadioButton) { onOptionSelected(option) },
                 shape = shape,
                 color = bgColor,
-                shadowElevation = if (isSelected) 2.dp else 1.dp
+                shadowElevation = if (blurOn) 0.dp else if (isSelected) 2.dp else 1.dp,
+                border = if (blurOn && !isSelected) {
+                    BorderStroke(0.9.dp, ExpressiveTheme.colors.frostedBorderColor)
+                } else {
+                    null
+                }
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
@@ -463,13 +640,24 @@ fun AchievementUnlockedBanner(
                 ),
                 label = "badge_scale"
             )
+            val blurOn = ExpressiveTheme.colors.uiBlurEnabled
+            val backdropActive = isBackdropBlurActive()
+            val bannerShape = RoundedCornerShape(16.dp)
+            val bannerTint = if (blurOn) {
+                MaterialTheme.colorScheme.primaryContainer.copy(
+                    alpha = (1f - ExpressiveTheme.colors.uiTransparency).coerceIn(0.28f, 0.92f)
+                )
+            } else {
+                MaterialTheme.colorScheme.primaryContainer
+            }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shadowElevation = 8.dp,
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .applyBackdropBlur(shape = bannerShape, tintColor = bannerTint),
+                shape = bannerShape,
+                color = if (backdropActive) Color.Transparent else bannerTint,
+                shadowElevation = if (blurOn) 0.dp else 8.dp,
                 border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
             ) {
                 Row(

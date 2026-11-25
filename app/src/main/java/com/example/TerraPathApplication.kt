@@ -38,7 +38,8 @@ class AppContainer(application: Application) {
         routeDao = database.routeDao(),
         markerDao = database.markerDao(),
         paletteDao = database.paletteDao(),
-        achievementDao = database.achievementDao()
+        achievementDao = database.achievementDao(),
+        routeFolderDao = database.routeFolderDao()
     )
     val trackingCoordinator = TrackingCoordinator(
         repository = repository,

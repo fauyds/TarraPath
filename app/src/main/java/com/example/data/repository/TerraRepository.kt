@@ -11,6 +11,8 @@ import com.example.data.local.MarkerDao
 import com.example.data.local.PaletteDao
 import com.example.data.local.RouteDao
 import com.example.data.local.RouteEntity
+import com.example.data.local.RouteFolderDao
+import com.example.data.local.RouteFolderEntity
 import com.example.data.local.RoutePointEntity
 import com.example.data.model.AchievementCatalog
 import com.example.data.model.AchievementCategory
@@ -20,6 +22,7 @@ import com.example.data.model.MapPalette
 import com.example.data.model.MarkerCategory
 import com.example.domain.GeoGrid
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 class TerraRepository(
@@ -27,12 +30,14 @@ class TerraRepository(
     private val routeDao: RouteDao,
     private val markerDao: MarkerDao,
     private val paletteDao: PaletteDao,
-    private val achievementDao: AchievementDao
+    private val achievementDao: AchievementDao,
+    private val routeFolderDao: RouteFolderDao? = null
 ) {
     val exploredChunks: Flow<List<ExploredChunkEntity>> = chunkDao.observeAllChunks()
     val totalChunkCount: Flow<Int> = chunkDao.observeTotalChunkCount()
     suspend fun getTotalChunkCountOnce(): Int = chunkDao.getTotalChunkCountOnce()
     val allRoutes: Flow<List<RouteEntity>> = routeDao.observeAllRoutes()
+    val allRouteFolders: Flow<List<RouteFolderEntity>> = routeFolderDao?.observeAllFolders() ?: flowOf(emptyList())
     val allMarkers: Flow<List<MapMarkerEntity>> = markerDao.observeAllMarkers()
     val achievementUnlocks: Flow<List<AchievementUnlockEntity>> = achievementDao.observeAllUnlocks()
     val explorerStats: Flow<ExplorerStatsEntity> = achievementDao.observeStats().map {
@@ -223,7 +228,8 @@ class TerraRepository(
         chunksUnlocked: Int,
         startedAt: Long,
         endedAt: Long,
-        points: List<LatLonPoint>
+        points: List<LatLonPoint>,
+        folderId: Long? = null
     ): Long {
         val routeId = routeDao.insertRoute(
             RouteEntity(
@@ -235,7 +241,8 @@ class TerraRepository(
                 maxSpeedKmh = maxSpeedKmh,
                 chunksUnlocked = chunksUnlocked,
                 startedAt = startedAt,
-                endedAt = endedAt
+                endedAt = endedAt,
+                folderId = folderId
             )
         )
         if (points.isNotEmpty()) {
@@ -260,6 +267,36 @@ class TerraRepository(
 
     suspend fun deleteRoute(routeId: Long) {
         routeDao.deleteRouteById(routeId)
+    }
+
+    suspend fun createRouteFolder(name: String, colorArgb: Long): Long {
+        val dao = routeFolderDao ?: return 0L
+        return dao.insertFolder(
+            RouteFolderEntity(
+                name = name.trim().ifEmpty { "Folder" },
+                colorArgb = colorArgb,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun updateRouteFolder(folder: RouteFolderEntity, newName: String, newColorArgb: Long) {
+        val dao = routeFolderDao ?: return
+        dao.updateFolder(
+            folder.copy(
+                name = newName.trim().ifEmpty { folder.name },
+                colorArgb = newColorArgb
+            )
+        )
+    }
+
+    suspend fun deleteRouteFolder(folderId: Long) {
+        routeDao.clearFolderFromRoutes(folderId)
+        routeFolderDao?.deleteFolderById(folderId)
+    }
+
+    suspend fun moveRouteToFolder(routeId: Long, folderId: Long?) {
+        routeDao.updateRouteFolder(routeId, folderId)
     }
 
     suspend fun replaceRoutePoints(routeId: Long, points: List<LatLonPoint>): Boolean {

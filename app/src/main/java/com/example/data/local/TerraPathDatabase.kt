@@ -12,18 +12,20 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ExploredChunkEntity::class,
         RouteEntity::class,
         RoutePointEntity::class,
+        RouteFolderEntity::class,
         MapMarkerEntity::class,
         MapPalettePresetEntity::class,
         AchievementUnlockEntity::class,
         ExplorerStatsEntity::class,
         OfflineRegionEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class TerraPathDatabase : RoomDatabase() {
     abstract fun chunkDao(): ChunkDao
     abstract fun routeDao(): RouteDao
+    abstract fun routeFolderDao(): RouteFolderDao
     abstract fun markerDao(): MarkerDao
     abstract fun paletteDao(): PaletteDao
     abstract fun achievementDao(): AchievementDao
@@ -71,6 +73,27 @@ abstract class TerraPathDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS route_folders (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        colorArgb INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "ALTER TABLE routes ADD COLUMN folderId INTEGER DEFAULT NULL REFERENCES route_folders(id) ON DELETE SET NULL"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_routes_folderId ON routes(folderId)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): TerraPathDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -78,7 +101,7 @@ abstract class TerraPathDatabase : RoomDatabase() {
                     TerraPathDatabase::class.java,
                     "terrapath_db"
                 )
-                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }

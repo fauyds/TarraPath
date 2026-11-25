@@ -13,13 +13,16 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
@@ -39,6 +42,7 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -76,6 +80,7 @@ import com.example.data.model.ThemeMode
 import com.example.domain.GeoGrid
 import com.example.ui.TerraViewModel
 import com.example.ui.components.AchievementUnlockedBanner
+import com.example.ui.components.FrostedMenuBackdrop
 import com.example.ui.components.LocalBackdropHazeState
 import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.applyBackdropBlur
@@ -87,6 +92,7 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.ExpressiveTheme
 import com.example.ui.theme.TerraPathTheme
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 
 const val ROUTE_EXPLORE = "explore"
 const val ROUTE_ROUTES = "routes"
@@ -259,6 +265,7 @@ fun TerraPathApp(appContainer: AppContainer) {
         val activeRecording by viewModel.activeRecording.collectAsStateWithLifecycle()
         val pendingRouteSummary by viewModel.pendingRouteSummary.collectAsStateWithLifecycle()
         val allRoutes by viewModel.allRoutes.collectAsStateWithLifecycle()
+        val allRouteFolders by viewModel.allRouteFolders.collectAsStateWithLifecycle()
         val highlightedRouteId by viewModel.highlightedRouteId.collectAsStateWithLifecycle()
         val highlightedRoutePoints by viewModel.highlightedRoutePoints.collectAsStateWithLifecycle()
         val markers by viewModel.allMarkers.collectAsStateWithLifecycle()
@@ -324,22 +331,53 @@ fun TerraPathApp(appContainer: AppContainer) {
                     ) {
                         Row(modifier = Modifier.fillMaxSize()) {
                             if (useNavRail && showBottomNav) {
-                                NavigationRail(
-                                    containerColor = ExpressiveTheme.colors.cardSurface
-                                ) {
-                                    PrimaryTabs.forEach { tab ->
-                                        val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
-                                        val label = stringResource(tab.labelRes)
-                                        NavigationRailItem(
-                                            selected = selected,
-                                            onClick = { navigateToTab(tab.route) },
-                                            icon = {
-                                                Icon(
-                                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                                                    contentDescription = label
-                                                )
-                                            },
-                                            label = { Text(label) }
+                                val railBlurOn = mapSettings.uiBlurEnabled
+                                val railHazeState = remember(railBlurOn) {
+                                    if (railBlurOn) HazeState() else null
+                                }
+                                Row(modifier = Modifier.fillMaxHeight().width(IntrinsicSize.Min)) {
+                                    Box(modifier = Modifier.fillMaxHeight().width(IntrinsicSize.Min)) {
+                                        if (railBlurOn && railHazeState != null) {
+                                            FrostedMenuBackdrop(
+                                                modifier = Modifier
+                                                    .matchParentSize()
+                                                    .hazeSource(state = railHazeState)
+                                            )
+                                        }
+                                        CompositionLocalProvider(LocalBackdropHazeState provides railHazeState) {
+                                            NavigationRail(
+                                                modifier = Modifier.applyBackdropBlur(
+                                                    shape = RectangleShape,
+                                                    tintColor = ExpressiveTheme.colors.cardSurface
+                                                ),
+                                                containerColor = if (railBlurOn && railHazeState != null) {
+                                                    Color.Transparent
+                                                } else {
+                                                    ExpressiveTheme.colors.cardSurface
+                                                }
+                                            ) {
+                                                PrimaryTabs.forEach { tab ->
+                                                    val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                                                    val label = stringResource(tab.labelRes)
+                                                    NavigationRailItem(
+                                                        selected = selected,
+                                                        onClick = { navigateToTab(tab.route) },
+                                                        icon = {
+                                                            Icon(
+                                                                imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                                                contentDescription = label
+                                                            )
+                                                        },
+                                                        label = { Text(label) }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (railBlurOn) {
+                                        VerticalDivider(
+                                            thickness = 0.8.dp,
+                                            color = ExpressiveTheme.colors.frostedBorderColor
                                         )
                                     }
                                 }
@@ -385,10 +423,14 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 onRequestPermissions = { launchPermissionRequest() },
                                 onStartRoute = { viewModel.startRouteRecording() },
                                 onStopRoute = { viewModel.stopRouteRecordingAndPrompt() },
-                                onConfirmSaveRoute = { name, colorArgb ->
-                                    viewModel.confirmSaveRoute(name, colorArgb)
+                                onConfirmSaveRoute = { name, colorArgb, folderId ->
+                                    viewModel.confirmSaveRoute(name, colorArgb, folderId)
                                 },
                                 onDiscardRoute = { viewModel.discardPendingRoute() },
+                                routeFolders = allRouteFolders,
+                                onCreateFolder = { name, colorArgb, onCreated ->
+                                    viewModel.createRouteFolder(name, colorArgb, onCreated)
+                                },
                                 onClearHighlightedRoute = { viewModel.highlightRouteOnMap(null) },
                                 onAddMarker = { title, note, category, lat, lon, colorArgb, iconName ->
                                     viewModel.addMarker(
@@ -436,6 +478,7 @@ fun TerraPathApp(appContainer: AppContainer) {
                         composable(ROUTE_ROUTES) {
                             RoutesLibraryScreen(
                                 routes = allRoutes,
+                                folders = allRouteFolders,
                                 onRouteClick = { routeId ->
                                     navController.navigate("route_detail/$routeId")
                                 },
@@ -447,7 +490,19 @@ fun TerraPathApp(appContainer: AppContainer) {
                                     viewModel.startWalkingToTrackStart(routeId)
                                     navigateToTab(ROUTE_EXPLORE)
                                 },
-                                onDeleteRoute = { routeId -> viewModel.deleteRoute(routeId) }
+                                onDeleteRoute = { routeId -> viewModel.deleteRoute(routeId) },
+                                onCreateFolder = { name, colorArgb, onCreated ->
+                                    viewModel.createRouteFolder(name, colorArgb, onCreated)
+                                },
+                                onUpdateFolder = { folder, newName, newColor ->
+                                    viewModel.updateRouteFolder(folder, newName, newColor)
+                                },
+                                onDeleteFolder = { folderId ->
+                                    viewModel.deleteRouteFolder(folderId)
+                                },
+                                onMoveRouteToFolder = { routeId, folderId ->
+                                    viewModel.moveRouteToFolder(routeId, folderId)
+                                }
                             )
                         }
 
@@ -461,6 +516,7 @@ fun TerraPathApp(appContainer: AppContainer) {
                             RouteDetailScreen(
                                 route = route,
                                 points = points,
+                                folders = allRouteFolders,
                                 palette = activeMapPalette,
                                 showGridLines = mapSettings.showGridLines,
                                 onBack = { navController.popBackStack() },
@@ -474,8 +530,19 @@ fun TerraPathApp(appContainer: AppContainer) {
                                     navController.popBackStack()
                                     navigateToTab(ROUTE_EXPLORE)
                                 },
+                                onWalkToFinish = { id ->
+                                    viewModel.startWalkingToTrackFinish(id)
+                                    navController.popBackStack()
+                                    navigateToTab(ROUTE_EXPLORE)
+                                },
                                 isSnappingToRoads = snappingRouteId == routeId,
                                 onSnapToRoads = { id -> viewModel.snapRouteToRoads(id) },
+                                onMoveRouteToFolder = { id, folderId ->
+                                    viewModel.moveRouteToFolder(id, folderId)
+                                },
+                                onCreateFolder = { name, colorArgb, onCreated ->
+                                    viewModel.createRouteFolder(name, colorArgb, onCreated)
+                                },
                                 onDeleteRoute = { id -> viewModel.deleteRoute(id) }
                             )
                         }
@@ -593,18 +660,17 @@ fun TerraPathApp(appContainer: AppContainer) {
                                 }
                             }
                         }
+                        // Global Expressive Achievement Unlock Toast Banner (inside LocalBackdropHazeState)
+                        AchievementUnlockedBanner(
+                            achievement = activeBanner,
+                            onDismiss = { viewModel.dismissCurrentAchievementBanner() },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                        )
                     }
                 }
             }
-
-            // Global Expressive Achievement Unlock Toast Banner
-            AchievementUnlockedBanner(
-                achievement = activeBanner,
-                onDismiss = { viewModel.dismissCurrentAchievementBanner() },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .windowInsetsPadding(WindowInsets.statusBars)
-            )
         }
     }
 }

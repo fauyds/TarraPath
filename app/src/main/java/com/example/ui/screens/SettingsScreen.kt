@@ -96,18 +96,16 @@ import com.example.ui.components.CustomColorPickerDialog
 import com.example.ui.components.ExpressiveCard
 import com.example.ui.components.ExpressiveHorizontalSegmentedSelector
 import com.example.ui.components.ExpressivePillButton
+import com.example.ui.components.FrostedMenuContainer
 import com.example.ui.components.GoogleIconLibraryDialog
-import com.example.ui.components.LocalBackdropHazeState
 import com.example.ui.components.LocalBottomOverlayPadding
 import com.example.ui.components.MarkerStylePreviewBadge
 import com.example.ui.components.OfflineAreasDialog
-import com.example.ui.components.conditionalBlur
 import com.example.ui.components.formatStorageBytes
 import com.example.ui.components.groupedCardShape
 import com.example.ui.icons.GoogleIconRegistry
 import com.example.ui.map.MiniMapPalettePreview
 import com.example.ui.theme.ExpressiveTheme
-import dev.chrisbanes.haze.hazeSource
 
 @Composable
 fun SettingsScreen(
@@ -168,30 +166,16 @@ fun SettingsScreen(
     }
 
     val anyDialogOpen = showIconBrowser || showThemeColorPicker || showApiKeyDialog || showOfflineAreasDialog
-    val hazeState = LocalBackdropHazeState.current
     val bottomOverlayPadding = LocalBottomOverlayPadding.current
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(ExpressiveTheme.colors.appBackground),
-        contentAlignment = Alignment.TopCenter
+    FrostedMenuContainer(
+        modifier = modifier,
+        blurBehindDialog = anyDialogOpen
     ) {
         LazyColumn(
             modifier = Modifier
                 .widthIn(max = 600.dp)
                 .fillMaxSize()
-                .then(
-                    if (mapSettings.uiBlurEnabled && hazeState != null) {
-                        Modifier.hazeSource(state = hazeState)
-                    } else {
-                        Modifier
-                    }
-                )
-                .conditionalBlur(
-                    enabled = mapSettings.uiBlurEnabled && anyDialogOpen,
-                    radius = (mapSettings.uiBlurRadiusDp * 0.5f).coerceIn(2f, 20f).dp
-                )
                 .windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(
                 start = 16.dp,
